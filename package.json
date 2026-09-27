@@ -4,13 +4,17 @@
   "description": "OpenCode Go plan usage (rolling / weekly / monthly) in the session sidebar",
   "type": "module",
   "license": "MIT",
+  "repository": "github:ionutale/opencode-go-usage-plugin",
   "exports": {
     ".": "./src/index.ts",
     "./tui": "./src/tui.tsx",
     "./rpc": "./src/rpc.ts"
   },
   "files": [
-    "src"
+    "src",
+    "server.ts",
+    "tui.tsx",
+    "!src/*.test.ts"
   ],
   "scripts": {
     "test": "vitest run",
@@ -21,8 +25,8 @@
     "node": ">=20"
   },
   "peerDependencies": {
-    "@opentui/core": ">=0.5.8",
-    "@opentui/solid": ">=0.5.8",
+    "@opentui/core": ">=0.5.12",
+    "@opentui/solid": ">=0.5.12",
     "solid-js": ">=1.9.0"
   },
   "dependencies": {

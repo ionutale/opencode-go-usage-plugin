@@ -8,8 +8,9 @@
     "jsxImportSource": "@opentui/solid",
     "strict": true,
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["src", "scripts"]
+  "include": ["src", "scripts", "server.ts", "tui.tsx"]
 }
