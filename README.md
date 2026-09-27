@@ -5,7 +5,7 @@ as three color-coded bars in the session sidebar.
 
 ```text
 Rolling  ████░░░░░░   40%  1h 13m
-Weekly   ██████████   77%  6h 9m
+Weekly   ████████░░   77%  6h 9m
 Monthly  ██████░░░░   64%  7d 16h
 ```
 
@@ -64,6 +64,8 @@ TUI (sidebar slot) ──RPC──▶ server plugin ──HTTPS──▶ opencod
   seconds and renders `sidebar.footer`. It never sees your key.
 - Because the fetch happens server-side, the widget also works when your CLI is
   connected to a remote server.
+
+Endpoint shipped in [anomalyco/opencode#16513](https://github.com/anomalyco/opencode/pull/16513).
 
 ## Troubleshooting
 

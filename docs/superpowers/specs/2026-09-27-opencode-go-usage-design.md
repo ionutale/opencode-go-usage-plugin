@@ -12,7 +12,7 @@ color-coded bars in the session sidebar footer:
 
 ```
 Rolling  ████░░░░░░  40%  1h 13m
-Weekly   ██████████  77%  6h 9m
+Weekly   ████████░░  77%  6h 9m
 Monthly  ██████░░░░  64%  7d 16h
 ```
 

@@ -1247,7 +1247,7 @@ as three color-coded bars in the session sidebar.
 
 ```text
 Rolling  ████░░░░░░   40%  1h 13m
-Weekly   ██████████   77%  6h 9m
+Weekly   ████████░░   77%  6h 9m
 Monthly  ██████░░░░   64%  7d 16h
 ```
 
@@ -1416,3 +1416,17 @@ Post the repo URL, the install command, and the final verification results (RPC 
 - **Spec coverage:** endpoint + auth (Task 1/2/3), RPC contract (Task 3), sidebar rendering + colors + countdowns + error/loading/stale states (Task 4 with pure logic in Task 1), caching and stale windows (Task 2), README (Task 7), publishing (Task 8), verification incl. secret scan (Tasks 6-8). Non-goals unchanged.
 - **Constants** appear once in Task 1/Task 2 (pure modules) and once in Task 4 (timer names), matching the spec's exact values.
 - **Type consistency:** `UsageWindow`/`UsageWindows`/`UsageResult`/`UsageError`/`GoUsage`/`ERROR_TEXT`/`extractKey` names are used identically across tasks.
+
+---
+
+## Post-implementation amendments
+
+Recorded after the whole-branch review. Task text above is unchanged.
+
+- The RPC contract gained both an `input` object and a top-level `events` field
+  (required by `@opencode/schema@2.0.18`). The TUI now calls `rpc.get({})`.
+- The TUI component must use accessor props and `<Show>`; the Task 4 code block
+  shows the pre-fix structure that caused a loading-forever bug. The shipped
+  shape is in `src/tui.tsx`.
+- Cadence changed to a 30-second refresh with a 15-second server cache; the
+  README and spec were updated accordingly.
