@@ -1437,5 +1437,9 @@ Recorded after the whole-branch review. Task text above is unchanged.
   `./src/tui.tsx`). JSX inside `node_modules` receives no Solid transform, so
   `scripts/build-tui.mjs` runs `transformSolidSource` from the installed
   `@opentui/solid` over `src/tui.tsx`, repoints relative imports at the shipped
-  `src/` files, and writes the committed artifact. Run `pnpm build` after
+  `src/` files, and writes the committed artifact. Run `pnpm build:tui` after
   editing `src/tui.tsx`.
+- The build script is named `build:tui`, not `build`: OpenCode executes a
+  plugin's `build` script during package preparation — where the repo's
+  dependencies are not yet available — so `opencode plugin add` failed with
+  "git dep preparation failed" until the script was renamed.

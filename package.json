@@ -19,10 +19,10 @@
     "!src/*.test.ts"
   ],
   "scripts": {
-    "build": "node scripts/build-tui.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "smoke": "tsx scripts/smoke.ts"
+    "smoke": "tsx scripts/smoke.ts",
+    "build:tui": "node scripts/build-tui.mjs"
   },
   "engines": {
     "node": ">=20"
