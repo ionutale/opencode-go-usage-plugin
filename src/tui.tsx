@@ -10,7 +10,7 @@ import {
   type UsageWindow,
 } from "./usage"
 
-const REFRESH_MS = 60_000
+const REFRESH_MS = 30_000
 const TICK_MS = 30_000
 
 type ViewState =
