@@ -17,7 +17,7 @@ says 40%.
 
 - OpenCode V2
 - An OpenCode Go subscription, connected with `/connect` → **OpenCode Go**
-- About 36 columns of sidebar width for all three rows
+- About 34 columns of sidebar width for all three rows
 
 ## Install
 
@@ -39,11 +39,11 @@ the sidebar footer when the sidebar is visible.
 
 ## What you see
 
-| Row     | Window                                | Resets                              |
-| ------- | ------------------------------------- | ----------------------------------- |
-| Rolling | Short-term burst limit (~5h)          | Shortly after usage slows down      |
-| Weekly  | Weekly allotment                      | At the start of the next week       |
-| Monthly | Full monthly allotment for the plan   | At the start of the next month      |
+| Row     | Window                              | Resets                                                                                 |
+| ------- | ----------------------------------- | -------------------------------------------------------------------------------------- |
+| Rolling | Short-term burst limit (~5h)        | Counts down to the API's reset time for the short-term window                          |
+| Weekly  | Weekly allotment                    | Counts down to the weekly boundary                                                     |
+| Monthly | Full monthly allotment for the plan | Counts down to your subscription's monthly reset (anchored — not the 1st of the month) |
 
 - Bar and percentage color: **green < 50%**, **yellow 50–74%**, **red ≥ 75%**.
 - Data refreshes every 30 seconds; the reset countdown ticks every 30 seconds.
@@ -59,7 +59,7 @@ TUI (sidebar slot) ──RPC──▶ server plugin ──HTTPS──▶ opencod
 
 - The **server plugin** resolves your Go credential through OpenCode's
   integration API, fetches the usage endpoint, and caches the result for 15
-  seconds. Your API key never leaves the server process and is never logged.
+  seconds. Your API key is never exposed to the TUI and is never written to logs.
 - The **TUI plugin** calls the typed RPC method `get` (id `go-usage`) every 30
   seconds and renders `sidebar.footer`. It never sees your key.
 - Because the fetch happens server-side, the widget also works when your CLI is
