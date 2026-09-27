@@ -81,10 +81,16 @@ Endpoint shipped in [anomalyco/opencode#16513](https://github.com/anomalyco/open
 
 ```sh
 pnpm install
+pnpm build       # rebuild dist/tui.js after editing src/tui.tsx
 pnpm test        # unit tests
 pnpm typecheck   # tsc --noEmit
 pnpm smoke       # live call; needs a local Go key (/connect or OPENCODE_API_KEY)
 ```
+
+The published `./tui` entry is the prebuilt `dist/tui.js`, committed to the
+repo. OpenTUI's Solid plugin does not compile JSX inside `node_modules`, so
+packaged installs need this prebuilt file; run `pnpm build` after editing
+`src/tui.tsx`.
 
 To test a local checkout in OpenCode, add its path to the `plugins` list of your
 global `opencode.json(c)`, restart with `opencode service restart`, and open a

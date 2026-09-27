@@ -7,17 +7,19 @@
   "repository": "github:ionutale/opencode-go-usage-plugin",
   "exports": {
     ".": "./src/index.ts",
-    "./tui": "./src/tui.tsx",
+    "./tui": "./dist/tui.js",
     "./rpc": "./src/rpc.ts"
   },
   "files": [
     "src",
+    "dist",
     "server.ts",
     "tui.tsx",
     "tsconfig.json",
     "!src/*.test.ts"
   ],
   "scripts": {
+    "build": "node scripts/build-tui.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "smoke": "tsx scripts/smoke.ts"

@@ -1430,3 +1430,12 @@ Recorded after the whole-branch review. Task text above is unchanged.
   shape is in `src/tui.tsx`.
 - Cadence changed to a 30-second refresh with a 15-second server cache; the
   README and spec were updated accordingly.
+- The TUI requests usage for the active location explicitly and bounds each
+  call: `rpc.get({}, { location: context.location ?? context.data.location.default(), signal: AbortSignal.timeout(15_000) })`.
+  From a packaged install the RPC never settles without a location.
+- `exports["./tui"]` points at the precompiled `./dist/tui.js` (was
+  `./src/tui.tsx`). JSX inside `node_modules` receives no Solid transform, so
+  `scripts/build-tui.mjs` runs `transformSolidSource` from the installed
+  `@opentui/solid` over `src/tui.tsx`, repoints relative imports at the shipped
+  `src/` files, and writes the committed artifact. Run `pnpm build` after
+  editing `src/tui.tsx`.

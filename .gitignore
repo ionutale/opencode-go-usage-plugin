@@ -1,4 +1,5 @@
 node_modules/
-dist/
+dist/*
+!dist/tui.js
 .DS_Store
 *.capture.txt
