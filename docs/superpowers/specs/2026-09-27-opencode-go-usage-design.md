@@ -75,7 +75,7 @@ rolling / weekly / monthly numbers as the OpenCode console dashboard.
 ┌─ TUI process ────────────────┐      ┌─ OpenCode server ──────────────────┐      ┌─ opencode.ai ───────┐
 │ tui.tsx                      │ RPC  │ index.ts (server plugin)           │ HTTP │ /zen/go/v1/usage    │
 │ • sidebar.footer slot        │─────▶│ • resolves opencode-go credential  │─────▶│ (Bearer key)        │
-│ • polls every 60s            │ get  │ • fetches + 30s cache              │      │ rolling/weekly/     │
+│ • polls every 30s            │ get  │ • fetches + 15s cache              │      │ rolling/weekly/     │
 │ • ticks countdown locally    │◀─────│ • serves last-good on failure      │      │ monthly             │
 └──────────────────────────────┘      └────────────────────────────────────┘      └─────────────────────┘
 ```
@@ -162,9 +162,9 @@ implementation plan and README once chosen.
 
 ## Caching and failure behavior
 
-Constants: `CACHE_TTL_MS = 30_000`, `STALE_MAX_AGE_MS = 300_000`.
+Constants: `CACHE_TTL_MS = 15_000`, `STALE_MAX_AGE_MS = 300_000`.
 
-- `get` returns the cached successful result when younger than 30s.
+- `get` returns the cached successful result when younger than 15s.
 - Otherwise fetches upstream; on success updates the cache.
 - On refresh failure with a cached result younger than 5 minutes: return the
   cached data with `stale: true`.
@@ -195,7 +195,7 @@ Per window, one row: `<name>  <bar>  <pct>  <countdown>`
 
 Update cadence (TUI):
 
-- Fetch immediately on setup, then every 60s.
+- Fetch immediately on setup, then every 30s.
 - Re-render countdown every 30s from the last successful response, without
   refetching.
 - Both timers cleared in the plugin teardown function.
@@ -285,7 +285,7 @@ opencode-go-usage-plugin/
    - `formatDuration`: `45m`, `1h 13m`, `6h 9m`, `7d 16h`, sub-minute → `0m`,
      past timestamp → `0m`.
    - `barSegments` / color: 0, 49, 50, 74, 75, 100 boundaries, rounding.
-   - Server logic with mocked `fetch`: auth header present; 30s cache hit;
+   - Server logic with mocked `fetch`: auth header present; 15s cache hit;
      401/403/network mapping; stale fallback within 5 min; error when no
      cache.
 2. **Typecheck**: `pnpm typecheck`.
@@ -320,7 +320,7 @@ opencode-go-usage-plugin/
    percentages, and countdowns matching `/zen/go/v1/usage` within one poll
    cycle.
 2. Countdown text updates every ~30s without refetching; data refetches every
-   ~60s.
+   ~30s.
 3. With no connection / bad key / no subscription / offline, the widget shows
    the mapped dim one-liner instead of crashing or logging noisily.
 4. The widget works when the TUI is connected to a remote server (key stays

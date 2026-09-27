@@ -46,7 +46,7 @@ the sidebar footer when the sidebar is visible.
 | Monthly | Full monthly allotment for the plan   | At the start of the next month      |
 
 - Bar and percentage color: **green < 50%**, **yellow 50–74%**, **red ≥ 75%**.
-- Data refreshes every 60 seconds; the reset countdown ticks every 30 seconds.
+- Data refreshes every 30 seconds; the reset countdown ticks every 30 seconds.
 - Percentages are *used* amounts, same as the console dashboard.
 - If the API is unreachable, the last good values stay on screen (dimmed) for
   up to 5 minutes.
@@ -58,9 +58,9 @@ TUI (sidebar slot) ──RPC──▶ server plugin ──HTTPS──▶ opencod
 ```
 
 - The **server plugin** resolves your Go credential through OpenCode's
-  integration API, fetches the usage endpoint, and caches the result for 30
+  integration API, fetches the usage endpoint, and caches the result for 15
   seconds. Your API key never leaves the server process and is never logged.
-- The **TUI plugin** calls the typed RPC method `get` (id `go-usage`) every 60
+- The **TUI plugin** calls the typed RPC method `get` (id `go-usage`) every 30
   seconds and renders `sidebar.footer`. It never sees your key.
 - Because the fetch happens server-side, the widget also works when your CLI is
   connected to a remote server.

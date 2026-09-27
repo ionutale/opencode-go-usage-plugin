@@ -1,7 +1,7 @@
 import { UsageParseError, parseUsageResponse, type UsageResult } from "./usage"
 
 export const USAGE_ENDPOINT = "https://opencode.ai/zen/go/v1/usage"
-export const CACHE_TTL_MS = 30_000
+export const CACHE_TTL_MS = 15_000
 export const STALE_MAX_AGE_MS = 300_000
 
 export type UsageErrorType = "no_credential" | "unauthorized" | "forbidden" | "upstream"

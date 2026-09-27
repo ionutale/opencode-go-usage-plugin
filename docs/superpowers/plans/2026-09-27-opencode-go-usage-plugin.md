@@ -4,7 +4,7 @@
 
 **Goal:** Build, verify, and publish a public OpenCode plugin that shows OpenCode Go plan usage (rolling / weekly / monthly) as three color-coded bars in the session sidebar footer.
 
-**Architecture:** A server plugin resolves the `opencode-go` credential through the integration API, fetches `GET https://opencode.ai/zen/go/v1/usage` with a 30s cache and 5-minute stale fallback, and exposes the result over a typed RPC (`id: go-usage`, method `get`). A TUI plugin calls that RPC and renders the `sidebar.footer` slot, polling every 60s and re-rendering countdowns every 30s. Credentials never leave the server process.
+**Architecture:** A server plugin resolves the `opencode-go` credential through the integration API, fetches `GET https://opencode.ai/zen/go/v1/usage` with a 15s cache and 5-minute stale fallback, and exposes the result over a typed RPC (`id: go-usage`, method `get`). A TUI plugin calls that RPC and renders the `sidebar.footer` slot, polling every 30s and re-rendering countdowns every 30s. Credentials never leave the server process.
 
 **Tech Stack:** TypeScript (strict, no build step — sources are shipped), `@opencode/plugin` 2.x (`./rpc`, `./tui`, plugin hooks), `solid-js` JSX via `@opentui/solid`, vitest, tsx, pnpm.
 
@@ -15,7 +15,7 @@
 - OpenCode V2 only; plugin API `@opencode/plugin` 2.x (tested against CLI v2.0.18).
 - No credentials in any tracked file. The key is resolved at runtime on the server and must never be logged, printed, or committed.
 - Upstream endpoint only: `https://opencode.ai/zen/go/v1/usage` with `Authorization: Bearer <key>`.
-- Constants (exact values): `CACHE_TTL_MS = 30_000`, `STALE_MAX_AGE_MS = 300_000`, `REFRESH_MS = 60_000`, `TICK_MS = 30_000`, bar width `10`.
+- Constants (exact values): `CACHE_TTL_MS = 15_000`, `STALE_MAX_AGE_MS = 300_000`, `REFRESH_MS = 30_000`, `TICK_MS = 30_000`, bar width `10`.
 - Color thresholds: green `< 50`, yellow `50–74`, red `≥ 75`. Colors: `#22c55e` / `#eab308` / `#ef4444`.
 - Formatting: `Xd Yh` ≥ 1 day, `Xh Ym` ≥ 1 hour, otherwise `Xm`; past/invalid timestamps render `0m`.
 - Package name `opencode-go-usage-plugin`; export entries `.` → `src/index.ts`, `./tui` → `src/tui.tsx`, `./rpc` → `src/rpc.ts`.
@@ -607,7 +607,7 @@ Expected: FAIL — cannot resolve `./service`.
 import { UsageParseError, parseUsageResponse, type UsageResult } from "./usage"
 
 export const USAGE_ENDPOINT = "https://opencode.ai/zen/go/v1/usage"
-export const CACHE_TTL_MS = 30_000
+export const CACHE_TTL_MS = 15_000
 export const STALE_MAX_AGE_MS = 300_000
 
 export type UsageErrorType = "no_credential" | "unauthorized" | "forbidden" | "upstream"
@@ -980,7 +980,7 @@ import {
   type UsageWindow,
 } from "./usage"
 
-const REFRESH_MS = 60_000
+const REFRESH_MS = 30_000
 const TICK_MS = 30_000
 
 type ViewState =
@@ -1288,7 +1288,7 @@ the sidebar footer when the sidebar is visible.
 | Monthly | Full monthly allotment for the plan   | At the start of the next month      |
 
 - Bar and percentage color: **green < 50%**, **yellow 50–74%**, **red ≥ 75%**.
-- Data refreshes every 60 seconds; the reset countdown ticks every 30 seconds.
+- Data refreshes every 30 seconds; the reset countdown ticks every 30 seconds.
 - Percentages are *used* amounts, same as the console dashboard.
 - If the API is unreachable, the last good values stay on screen (dimmed) for
   up to 5 minutes.
@@ -1300,9 +1300,9 @@ TUI (sidebar slot) ──RPC──▶ server plugin ──HTTPS──▶ opencod
 ```
 
 - The **server plugin** resolves your Go credential through OpenCode's
-  integration API, fetches the usage endpoint, and caches the result for 30
+  integration API, fetches the usage endpoint, and caches the result for 15
   seconds. Your API key never leaves the server process and is never logged.
-- The **TUI plugin** calls the typed RPC method `get` (id `go-usage`) every 60
+- The **TUI plugin** calls the typed RPC method `get` (id `go-usage`) every 30
   seconds and renders `sidebar.footer`. It never sees your key.
 - Because the fetch happens server-side, the widget also works when your CLI is
   connected to a remote server.
