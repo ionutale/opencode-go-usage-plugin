@@ -13,6 +13,7 @@ import {
 
 const REFRESH_MS = 30_000
 const TICK_MS = 30_000
+const REQUEST_TIMEOUT_MS = 15_000
 
 type ViewState =
   | { phase: "loading" }
@@ -29,7 +30,9 @@ export default Plugin.define({
     const refresh = async () => {
       try {
         // JSON-Schema RPC output types as `unknown`; the server contract fixes the shape.
-        setState({ phase: "ok", result: (await rpc.get({})) as UsageResult })
+        const location = context.location ?? context.data.location.default()
+        const result = await rpc.get({}, { location, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
+        setState({ phase: "ok", result: result as UsageResult })
       } catch (error) {
         setState({ phase: "error", text: describeRpcError(error) })
       }
