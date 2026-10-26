@@ -12,7 +12,7 @@ import { TextAttributes } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/solid";
 import { For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { GoUsage } from "../src/rpc.ts";
-import { aggregateModels, describeRange, filterRows, formatCost, formatTokens, modelOptions, providerOptions, rangeWindow, sortRows, sumRows } from "../src/tokens.ts";
+import { aggregateModels, describeRange, filterRows, fitNumber, fitText, formatCost, formatTokens, modelOptions, parseStatsResponse, providerOptions, rangeWindow, sortRows, sumRows, tokenColumns } from "../src/tokens.ts";
 import { RED, YELLOW, barSegments, describeRpcError, formatResetsIn, usageColor } from "../src/usage.ts";
 const REFRESH_MS = 30_000;
 const TICK_MS = 30_000;
@@ -303,7 +303,7 @@ function TokensDialog() {
         signal: AbortSignal.timeout(STATS_TIMEOUT_MS)
       });
       if (disposed || id !== requestID) return;
-      setStats(result);
+      setStats(parseStatsResponse(result));
       setUpdatedAt(Date.now());
     } catch (error) {
       if (disposed || id !== requestID) return;
@@ -425,76 +425,11 @@ function TokensDialog() {
     if (tickTimer) clearInterval(tickTimer);
   });
   const width = createMemo(() => Math.max(60, Math.min(112, dimensions().width - 8)));
-  const showReasoning = createMemo(() => width() >= (filters().cost ? 120 : 108));
-  const showCacheWrite = createMemo(() => width() >= (filters().cost ? 104 : 96));
-  const showSteps = createMemo(() => width() >= 88);
-  const showCost = createMemo(() => filters().cost);
-  const columns = createMemo(() => {
-    const base = [{
-      key: "provider",
-      label: "Provider",
-      width: 12,
-      align: "left"
-    }, {
-      key: "model",
-      label: "Model",
-      width: 14,
-      align: "left"
-    }, {
-      key: "input",
-      label: "Input",
-      width: 9,
-      align: "right"
-    }, {
-      key: "output",
-      label: "Output",
-      width: 8,
-      align: "right"
-    }];
-    if (showReasoning()) base.push({
-      key: "reasoning",
-      label: "Reasoning",
-      width: 9,
-      align: "right"
-    });
-    base.push({
-      key: "cacheRead",
-      label: "Cache R",
-      width: 10,
-      align: "right"
-    });
-    if (showCacheWrite()) base.push({
-      key: "cacheWrite",
-      label: "Cache W",
-      width: 10,
-      align: "right"
-    });
-    base.push({
-      key: "total",
-      label: "Total",
-      width: 10,
-      align: "right"
-    });
-    if (showSteps()) base.push({
-      key: "steps",
-      label: "Steps",
-      width: 6,
-      align: "right"
-    });
-    if (showCost()) base.push({
-      key: "cost",
-      label: "Cost*",
-      width: 9,
-      align: "right"
-    });
-    const fixed = base.reduce((sum, column) => sum + (column.key === "model" ? 0 : column.width), 0);
-    const gaps = base.length - 1;
-    const modelWidth = Math.max(14, width() - fixed - gaps);
-    return base.map(column => column.key === "model" ? {
-      ...column,
-      width: modelWidth
-    } : column);
-  });
+  const columns = createMemo(() => tokenColumns(rows(), totals(), {
+    width: width(),
+    exact: filters().exact,
+    cost: filters().cost
+  }));
   const tableHeight = createMemo(() => {
     const available = Math.max(5, Math.min(22, dimensions().height - (filters().cost ? 25 : 24)));
     return Math.min(available, Math.max(5, rows().length));
@@ -576,6 +511,12 @@ function TokensDialog() {
                 _$setProp(_el$11, "contentOptions", {
                   flexDirection: "column"
                 });
+                _$setProp(_el$11, "verticalScrollbarOptions", {
+                  visible: false
+                });
+                _$setProp(_el$11, "horizontalScrollbarOptions", {
+                  visible: false
+                });
                 _$insert(_el$11, _$createComponent(For, {
                   get each() {
                     return rows();
@@ -621,7 +562,7 @@ function TokensDialog() {
         return _el$12;
       }
     }), _el$14);
-    _$insertNode(_el$14, _$createTextNode(`1-4 range · p provider · m model · s sort · S direction · c cost · t exact · r refresh · Esc close`));
+    _$insertNode(_el$14, _$createTextNode(`1-4 range · p provider · m model · s sort · S dir · c cost · t exact · r refresh · Esc`));
     _$setProp(_el$14, "wrapMode", "none");
     _$effect(_p$ => {
       var _v$5 = width(),
@@ -828,7 +769,7 @@ function TableRow(props) {
         _$setProp(_el$52, "wrapMode", "none");
         _$insert(_el$52, (() => {
           var _c$2 = _$memo(() => item.align === "left");
-          return () => _c$2() ? truncate(item.text, item.width) : padStart(item.text, item.width);
+          return () => _c$2() ? fitText(item.text, item.width) : fitNumber(item.text, item.width);
         })());
         _$effect(_p$ => {
           var _v$10 = item.width,
@@ -1007,21 +948,11 @@ function totalCells(columns, totals, count, exact) {
     }
   });
 }
-function truncate(value, width) {
-  if (width <= 0) return "";
-  if (value.length <= width) return value.padEnd(width);
-  if (width === 1) return "…";
-  return `${value.slice(0, width - 1)}…`;
-}
 function shorten(value, width) {
   if (width <= 0) return "";
   if (value.length <= width) return value;
   if (width === 1) return "…";
   return `${value.slice(0, width - 1)}…`;
-}
-function padStart(value, width) {
-  if (value.length >= width) return value.slice(0, width);
-  return value.padStart(width);
 }
 function formatClock(ms) {
   return new Intl.DateTimeFormat("en-US", {

@@ -19,8 +19,10 @@ plugin says 40%.
 - OpenCode V2
 - An OpenCode Go subscription, connected with `/connect` → **OpenCode Go**
 - About 34 columns of sidebar width for the three quota rows
-- About 110 terminal columns for every `/tokens` column; narrower terminals
-  hide optional columns
+- The `xlarge` `/tokens` modal is 116 columns wide and uses about 112. At that
+  width the core columns plus reasoning, cache write, and steps fit. Exact
+  numbers or the cost column hide optional columns as needed; below about 92
+  columns only the core columns remain
 
 ## Install
 
@@ -98,7 +100,11 @@ month (UTC) and the range label says `quota unavailable (fallback)`.
 - `Total` = input + output + reasoning + cache read + cache write, matching
   OpenCode's token accounting.
 - The footer is pinned and sums the visible filtered rows.
-- `t` switches between compact (`13.9M`) and exact (`13,920,000`) numbers.
+- Numeric columns size to the widest formatted value, so exact mode never
+  truncates a number. Optional columns drop in order: reasoning, steps, cache
+  write, then cost.
+- `t` switches token columns between compact (`13.9M`) and exact
+  (`13,920,000`). Steps are always exact; cost is always two decimals.
 - `c` shows an estimated list-price cost. It is **not** your Go subscription
   charge; the official quota bars are the subscription truth.
 

@@ -4,16 +4,23 @@ import {
   aggregateModels,
   describeRange,
   filterRows,
+  fitNumber,
+  fitText,
   formatCost,
   formatTokens,
   modelOptions,
+  parseStatsResponse,
   providerOptions,
   rangeWindow,
   sortRows,
   sumRows,
+  tokenColumns,
   totalTokens,
+  StatsParseError,
   type StatsModel,
+  type TokenColumn,
   type TokenRow,
+  type TokenTotals,
 } from "./tokens"
 
 const NOW = Date.parse("2026-10-26T12:00:00.000Z")
@@ -346,5 +353,261 @@ describe("describeRange", () => {
   it("describes rolling and all-time windows", () => {
     expect(describeRange(rangeWindow("rolling", usage(), NOW), "UTC")).toContain("Rolling 5h")
     expect(describeRange(rangeWindow("all", usage(), NOW), "UTC")).toBe("All local history")
+  })
+})
+
+describe("rangeWindow with expired resets", () => {
+  it("falls back when the weekly reset has passed", () => {
+    const window = rangeWindow(
+      "week",
+      usage({ weekly: { status: "ok", percent: 10, resetsAt: new Date(NOW - 60_000).toISOString() } }),
+      NOW,
+    )
+    expect(window.from).toBe(Date.parse("2026-10-26T00:00:00.000Z"))
+    expect(window.approximate).toBe(true)
+  })
+
+  it("falls back when the monthly reset has passed", () => {
+    const window = rangeWindow(
+      "month",
+      usage({ monthly: { status: "ok", percent: 10, resetsAt: new Date(NOW - 86_400_000).toISOString() } }),
+      NOW,
+    )
+    expect(window.from).toBe(Date.parse("2026-10-01T00:00:00.000Z"))
+    expect(window.approximate).toBe(true)
+  })
+
+  it("falls back exactly at the reset instant", () => {
+    const window = rangeWindow(
+      "week",
+      usage({ weekly: { status: "ok", percent: 10, resetsAt: new Date(NOW).toISOString() } }),
+      NOW,
+    )
+    expect(window.from).toBe(Date.parse("2026-10-26T00:00:00.000Z"))
+    expect(window.approximate).toBe(true)
+  })
+})
+
+describe("parseStatsResponse", () => {
+  const valid = {
+    models: [
+      {
+        model: { id: "deepseek-v4.1-flash", providerID: "opencode-go", variant: "max" },
+        steps: 2,
+        tokens: { input: 10, output: 20, reasoning: 5, cache: { read: 100, write: 2 } },
+        cost: 0.5,
+        ignored: "extra field",
+      },
+    ],
+    range: { from: 1, to: 2 },
+    tokens: { input: 10, output: 20, reasoning: 5, cache: { read: 100, write: 2 } },
+  }
+
+  it("parses model rows and ignores unrelated fields", () => {
+    expect(parseStatsResponse(valid)).toEqual({
+      models: [
+        {
+          model: { id: "deepseek-v4.1-flash", providerID: "opencode-go", variant: "max" },
+          steps: 2,
+          tokens: { input: 10, output: 20, reasoning: 5, cache: { read: 100, write: 2 } },
+          cost: 0.5,
+        },
+      ],
+    })
+  })
+
+  it("rejects a payload without a models array", () => {
+    expect(() => parseStatsResponse({})).toThrow(StatsParseError)
+    expect(() => parseStatsResponse({ models: "nope" })).toThrow(StatsParseError)
+    expect(() => parseStatsResponse(undefined)).toThrow(StatsParseError)
+  })
+
+  it("skips malformed rows", () => {
+    const result = parseStatsResponse({
+      models: [
+        null,
+        { model: { id: "missing-provider" }, steps: 1, tokens: { input: 1 } },
+        {
+          model: { id: "ok", providerID: "opencode-go" },
+          steps: 1,
+          tokens: { input: 1, output: 2, reasoning: 0, cache: { read: 3, write: 4 } },
+          cost: 0,
+        },
+      ],
+    })
+    expect(result.models).toHaveLength(1)
+    expect(result.models[0]?.model.id).toBe("ok")
+  })
+
+  it("coerces non-finite numbers to zero", () => {
+    const result = parseStatsResponse({
+      models: [
+        {
+          model: { id: "ok", providerID: "opencode-go" },
+          steps: Number.NaN,
+          tokens: {
+            input: Number.NaN,
+            output: Number.POSITIVE_INFINITY,
+            reasoning: 0,
+            cache: { read: Number.NaN, write: Number.NEGATIVE_INFINITY },
+          },
+          cost: Number.NaN,
+        },
+      ],
+    })
+    expect(result.models[0]).toEqual({
+      model: { id: "ok", providerID: "opencode-go" },
+      steps: 0,
+      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      cost: 0,
+    })
+  })
+})
+
+describe("fitText and fitNumber", () => {
+  it("pads short text and truncates long text with an ellipsis", () => {
+    expect(fitText("abc", 5)).toBe("abc  ")
+    expect(fitText("abcdefgh", 5)).toBe("abcd…")
+  })
+
+  it("pads short numbers and never truncates a long number", () => {
+    expect(fitNumber("42", 5)).toBe("   42")
+    expect(fitNumber("2,200,000,000", 10)).toBe("2,200,000,000")
+  })
+})
+
+const COLUMN_ROWS: TokenRow[] = [
+  {
+    providerID: "opencode-go",
+    modelID: "deepseek-v4.1-flash",
+    input: 61_900_000,
+    output: 3_800_000,
+    reasoning: 7_000_000,
+    cacheRead: 2_200_000_000,
+    cacheWrite: 0,
+    total: 2_272_700_000,
+    steps: 10_549,
+    cost: 0.56,
+    variants: [],
+  },
+  {
+    providerID: "opencode-go",
+    modelID: "longcat-2.5-preview-free",
+    input: 180_000,
+    output: 66_200,
+    reasoning: 154,
+    cacheRead: 3_100_000,
+    cacheWrite: 0,
+    total: 3_346_354,
+    steps: 31,
+    cost: 0.01,
+    variants: [],
+  },
+]
+
+function numericValues(column: TokenColumn, rows: TokenRow[], totals: TokenTotals, exact: boolean): string[] {
+  const values: string[] = []
+  const read = (row: TokenRow) => {
+    switch (column.key) {
+      case "input":
+        return formatTokens(row.input, exact)
+      case "output":
+        return formatTokens(row.output, exact)
+      case "reasoning":
+        return formatTokens(row.reasoning, exact)
+      case "cacheRead":
+        return formatTokens(row.cacheRead, exact)
+      case "cacheWrite":
+        return formatTokens(row.cacheWrite, exact)
+      case "total":
+        return formatTokens(row.total, exact)
+      case "steps":
+        return formatTokens(row.steps, true)
+      case "cost":
+        return formatCost(row.cost)
+      default:
+        return ""
+    }
+  }
+  for (const row of rows) values.push(read(row))
+  switch (column.key) {
+    case "input":
+      values.push(formatTokens(totals.input, exact))
+      break
+    case "output":
+      values.push(formatTokens(totals.output, exact))
+      break
+    case "reasoning":
+      values.push(formatTokens(totals.reasoning, exact))
+      break
+    case "cacheRead":
+      values.push(formatTokens(totals.cacheRead, exact))
+      break
+    case "cacheWrite":
+      values.push(formatTokens(totals.cacheWrite, exact))
+      break
+    case "total":
+      values.push(formatTokens(totals.total, exact))
+      break
+    case "steps":
+      values.push(formatTokens(totals.steps, true))
+      break
+    case "cost":
+      values.push(formatCost(totals.cost))
+      break
+  }
+  return values
+}
+
+function tableWidth(columns: readonly TokenColumn[]): number {
+  return columns.reduce((sum, column) => sum + column.width, 0) + Math.max(0, columns.length - 1)
+}
+
+function expectNoNumericTruncation(columns: readonly TokenColumn[], rows: TokenRow[], exact: boolean): void {
+  const totals = sumRows(rows)
+  for (const column of columns) {
+    if (column.key === "provider" || column.key === "model") continue
+    for (const value of numericValues(column, rows, totals, exact)) {
+      expect(column.width).toBeGreaterThanOrEqual(value.length)
+    }
+  }
+}
+
+describe("tokenColumns", () => {
+  it("fits every numeric value at 112 columns in exact mode", () => {
+    const columns = tokenColumns(COLUMN_ROWS, sumRows(COLUMN_ROWS), { width: 112, exact: true, cost: false })
+    expect(columns.map((column) => column.key)).toEqual([
+      "provider",
+      "model",
+      "input",
+      "output",
+      "reasoning",
+      "cacheRead",
+      "cacheWrite",
+      "total",
+      "steps",
+    ])
+    expect(tableWidth(columns)).toBeLessThanOrEqual(112)
+    expectNoNumericTruncation(columns, COLUMN_ROWS, true)
+  })
+
+  it("drops reasoning, then steps, before cache write at 92 columns", () => {
+    const columns = tokenColumns(COLUMN_ROWS, sumRows(COLUMN_ROWS), { width: 92, exact: true, cost: false })
+    const keys = columns.map((column) => column.key)
+    expect(keys).not.toContain("reasoning")
+    expect(keys).not.toContain("steps")
+    expect(keys).toContain("cacheWrite")
+    expect(tableWidth(columns)).toBeLessThanOrEqual(92)
+    expectNoNumericTruncation(columns, COLUMN_ROWS, true)
+  })
+
+  it("keeps cost and drops reasoning before optional columns at 112 columns", () => {
+    const costly = COLUMN_ROWS.map((row, index) => ({ ...row, cost: index === 0 ? 12_345.67 : 0.01 }))
+    const columns = tokenColumns(costly, sumRows(costly), { width: 112, exact: true, cost: true })
+    const keys = columns.map((column) => column.key)
+    expect(keys).toContain("cost")
+    expect(keys).not.toContain("reasoning")
+    expect(tableWidth(columns)).toBeLessThanOrEqual(112)
+    expectNoNumericTruncation(columns, costly, true)
   })
 })
