@@ -97,11 +97,13 @@ export default Plugin.define({
     });
     const openTokens = () => {
       context.ui.dialog.clear();
+      context.ui.dialog.show(() => _$createComponent(TokensDialog, {}));
+      // `show` replaces the dialog and resets its presentation to medium; set
+      // the requested xlarge, centered presentation after the replace.
       context.ui.dialog.set({
         size: "xlarge",
         centered: true
       });
-      context.ui.dialog.show(() => _$createComponent(TokensDialog, {}));
     };
     context.keymap.layer(() => ({
       mode: "global",
@@ -422,7 +424,7 @@ function TokensDialog() {
     requestID += 1;
     if (tickTimer) clearInterval(tickTimer);
   });
-  const width = createMemo(() => Math.max(60, Math.min(112, dimensions().width - 12)));
+  const width = createMemo(() => Math.max(60, Math.min(112, dimensions().width - 8)));
   const showReasoning = createMemo(() => width() >= (filters().cost ? 120 : 108));
   const showCacheWrite = createMemo(() => width() >= (filters().cost ? 104 : 96));
   const showSteps = createMemo(() => width() >= 88);
@@ -485,7 +487,7 @@ function TokensDialog() {
       width: 9,
       align: "right"
     });
-    const fixed = base.reduce((sum, column) => sum + column.width, 0);
+    const fixed = base.reduce((sum, column) => sum + (column.key === "model" ? 0 : column.width), 0);
     const gaps = base.length - 1;
     const modelWidth = Math.max(14, width() - fixed - gaps);
     return base.map(column => column.key === "model" ? {
@@ -493,7 +495,10 @@ function TokensDialog() {
       width: modelWidth
     } : column);
   });
-  const tableHeight = createMemo(() => Math.max(5, Math.min(22, dimensions().height - (filters().cost ? 19 : 18))));
+  const tableHeight = createMemo(() => {
+    const available = Math.max(5, Math.min(22, dimensions().height - (filters().cost ? 25 : 24)));
+    return Math.min(available, Math.max(5, rows().length));
+  });
   return (() => {
     var _el$1 = _$createElement("box"),
       _el$10 = _$createElement("box"),
@@ -776,7 +781,7 @@ function FilterBar(props) {
     _$insertNode(_el$36, _$createTextNode(`· Model [m]`));
     _$setProp(_el$36, "fg", muted);
     _$setProp(_el$38, "fg", base);
-    _$insert(_el$38, () => truncate(props.filters.model, 24));
+    _$insert(_el$38, () => shorten(props.filters.model, 24));
     _$insertNode(_el$39, _$createTextNode(`· Sort [s]`));
     _$setProp(_el$39, "fg", muted);
     _$insertNode(_el$41, _el$42);
@@ -1005,6 +1010,12 @@ function totalCells(columns, totals, count, exact) {
 function truncate(value, width) {
   if (width <= 0) return "";
   if (value.length <= width) return value.padEnd(width);
+  if (width === 1) return "…";
+  return `${value.slice(0, width - 1)}…`;
+}
+function shorten(value, width) {
+  if (width <= 0) return "";
+  if (value.length <= width) return value;
   if (width === 1) return "…";
   return `${value.slice(0, width - 1)}…`;
 }

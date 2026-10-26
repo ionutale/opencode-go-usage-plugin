@@ -127,8 +127,10 @@ export default Plugin.define({
 
     const openTokens = () => {
       context.ui.dialog.clear()
-      context.ui.dialog.set({ size: "xlarge", centered: true })
       context.ui.dialog.show(() => <TokensDialog />)
+      // `show` replaces the dialog and resets its presentation to medium; set
+      // the requested xlarge, centered presentation after the replace.
+      context.ui.dialog.set({ size: "xlarge", centered: true })
     }
 
     context.keymap.layer(() => ({
@@ -369,7 +371,7 @@ function TokensDialog() {
     if (tickTimer) clearInterval(tickTimer)
   })
 
-  const width = createMemo(() => Math.max(60, Math.min(112, dimensions().width - 12)))
+  const width = createMemo(() => Math.max(60, Math.min(112, dimensions().width - 8)))
   const showReasoning = createMemo(() => width() >= (filters().cost ? 120 : 108))
   const showCacheWrite = createMemo(() => width() >= (filters().cost ? 104 : 96))
   const showSteps = createMemo(() => width() >= 88)
@@ -389,13 +391,16 @@ function TokensDialog() {
     if (showSteps()) base.push({ key: "steps", label: "Steps", width: 6, align: "right" })
     if (showCost()) base.push({ key: "cost", label: "Cost*", width: 9, align: "right" })
 
-    const fixed = base.reduce((sum, column) => sum + column.width, 0)
+    const fixed = base.reduce((sum, column) => sum + (column.key === "model" ? 0 : column.width), 0)
     const gaps = base.length - 1
     const modelWidth = Math.max(14, width() - fixed - gaps)
     return base.map((column) => (column.key === "model" ? { ...column, width: modelWidth } : column))
   })
 
-  const tableHeight = createMemo(() => Math.max(5, Math.min(22, dimensions().height - (filters().cost ? 19 : 18))))
+  const tableHeight = createMemo(() => {
+    const available = Math.max(5, Math.min(22, dimensions().height - (filters().cost ? 25 : 24)))
+    return Math.min(available, Math.max(5, rows().length))
+  })
 
   return (
     <box flexDirection="column" width={width()} gap={0}>
@@ -526,7 +531,7 @@ function FilterBar(props: { filters: Filters }) {
         <text fg={muted}>Provider [p]</text>
         <text fg={base}>{props.filters.provider}</text>
         <text fg={muted}>· Model [m]</text>
-        <text fg={base}>{truncate(props.filters.model, 24)}</text>
+        <text fg={base}>{shorten(props.filters.model, 24)}</text>
         <text fg={muted}>· Sort [s]</text>
         <text fg={base}>
           {SORT_LABELS[props.filters.sort]} {props.filters.direction === "desc" ? "↓" : "↑"}
@@ -711,6 +716,13 @@ function totalCells(columns: readonly Column[], totals: TokenTotals, count: numb
 function truncate(value: string, width: number): string {
   if (width <= 0) return ""
   if (value.length <= width) return value.padEnd(width)
+  if (width === 1) return "…"
+  return `${value.slice(0, width - 1)}…`
+}
+
+function shorten(value: string, width: number): string {
+  if (width <= 0) return ""
+  if (value.length <= width) return value
   if (width === 1) return "…"
   return `${value.slice(0, width - 1)}…`
 }
