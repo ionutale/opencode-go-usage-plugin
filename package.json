@@ -1,7 +1,7 @@
 {
   "name": "opencode-go-usage-plugin",
-  "version": "0.1.0",
-  "description": "OpenCode Go plan usage (rolling / weekly / monthly) in the session sidebar",
+  "version": "0.2.0",
+  "description": "OpenCode Go plan usage in the sidebar, plus a /tokens modal with per-model local token usage",
   "type": "module",
   "license": "MIT",
   "repository": "github:ionutale/opencode-go-usage-plugin",
