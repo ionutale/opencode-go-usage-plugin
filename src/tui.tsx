@@ -8,18 +8,23 @@ import {
   aggregateModels,
   describeRange,
   filterRows,
+  fitNumber,
+  fitText,
   formatCost,
   formatTokens,
   modelOptions,
+  parseStatsResponse,
   providerOptions,
   rangeWindow,
   sortRows,
   sumRows,
+  tokenColumns,
   type RangeKey,
   type RangeWindow,
   type SortDirection,
   type SortKey,
   type StatsResponse,
+  type TokenColumn,
   type TokenRow,
   type TokenTotals,
 } from "./tokens"
@@ -272,7 +277,7 @@ function TokensDialog() {
         { signal: AbortSignal.timeout(STATS_TIMEOUT_MS) },
       )
       if (disposed || id !== requestID) return
-      setStats(result as StatsResponse)
+      setStats(parseStatsResponse(result))
       setUpdatedAt(Date.now())
     } catch (error) {
       if (disposed || id !== requestID) return
@@ -372,30 +377,13 @@ function TokensDialog() {
   })
 
   const width = createMemo(() => Math.max(60, Math.min(112, dimensions().width - 8)))
-  const showReasoning = createMemo(() => width() >= (filters().cost ? 120 : 108))
-  const showCacheWrite = createMemo(() => width() >= (filters().cost ? 104 : 96))
-  const showSteps = createMemo(() => width() >= 88)
-  const showCost = createMemo(() => filters().cost)
-
-  const columns = createMemo<Column[]>(() => {
-    const base: Column[] = [
-      { key: "provider", label: "Provider", width: 12, align: "left" },
-      { key: "model", label: "Model", width: 14, align: "left" },
-      { key: "input", label: "Input", width: 9, align: "right" },
-      { key: "output", label: "Output", width: 8, align: "right" },
-    ]
-    if (showReasoning()) base.push({ key: "reasoning", label: "Reasoning", width: 9, align: "right" })
-    base.push({ key: "cacheRead", label: "Cache R", width: 10, align: "right" })
-    if (showCacheWrite()) base.push({ key: "cacheWrite", label: "Cache W", width: 10, align: "right" })
-    base.push({ key: "total", label: "Total", width: 10, align: "right" })
-    if (showSteps()) base.push({ key: "steps", label: "Steps", width: 6, align: "right" })
-    if (showCost()) base.push({ key: "cost", label: "Cost*", width: 9, align: "right" })
-
-    const fixed = base.reduce((sum, column) => sum + (column.key === "model" ? 0 : column.width), 0)
-    const gaps = base.length - 1
-    const modelWidth = Math.max(14, width() - fixed - gaps)
-    return base.map((column) => (column.key === "model" ? { ...column, width: modelWidth } : column))
-  })
+  const columns = createMemo(() =>
+    tokenColumns(rows(), totals(), {
+      width: width(),
+      exact: filters().exact,
+      cost: filters().cost,
+    }),
+  )
 
   const tableHeight = createMemo(() => {
     const available = Math.max(5, Math.min(22, dimensions().height - (filters().cost ? 25 : 24)))
@@ -427,6 +415,8 @@ function TokensDialog() {
                 focused={true}
                 scrollX={false}
                 contentOptions={{ flexDirection: "column" }}
+                verticalScrollbarOptions={{ visible: false }}
+                horizontalScrollbarOptions={{ visible: false }}
               >
                 <For each={rows()}>
                   {(row) => <TableRow cells={rowCells(columns(), row, filters().exact)} />}
@@ -447,7 +437,7 @@ function TokensDialog() {
         <text fg={context.theme.text.muted}>* Cost is an estimated list price, not your Go subscription charge.</text>
       </Show>
       <text fg={context.theme.text.muted} wrapMode="none">
-        1-4 range · p provider · m model · s sort · S direction · c cost · t exact · r refresh · Esc close
+        1-4 range · p provider · m model · s sort · S dir · c cost · t exact · r refresh · Esc
       </text>
     </box>
   )
@@ -545,25 +535,6 @@ function FilterBar(props: { filters: Filters }) {
   )
 }
 
-type ColumnKey =
-  | "provider"
-  | "model"
-  | "input"
-  | "output"
-  | "reasoning"
-  | "cacheRead"
-  | "cacheWrite"
-  | "total"
-  | "steps"
-  | "cost"
-
-type Column = {
-  key: ColumnKey
-  label: string
-  width: number
-  align: "left" | "right"
-}
-
 type Cell = {
   text: string
   width: number
@@ -572,7 +543,7 @@ type Cell = {
   bold?: boolean
 }
 
-function TableHeader(props: { columns: readonly Column[] }) {
+function TableHeader(props: { columns: readonly TokenColumn[] }) {
   return <TableRow cells={props.columns.map((column) => cell(column.label, column))} muted={true} />
 }
 
@@ -590,7 +561,7 @@ function TableRow(props: { cells: readonly Cell[]; muted?: boolean; bold?: boole
               attributes={bold() || item.bold === true ? TextAttributes.BOLD : undefined}
               wrapMode="none"
             >
-              {item.align === "left" ? truncate(item.text, item.width) : padStart(item.text, item.width)}
+              {item.align === "left" ? fitText(item.text, item.width) : fitNumber(item.text, item.width)}
             </text>
           </box>
         )}
@@ -600,7 +571,7 @@ function TableRow(props: { cells: readonly Cell[]; muted?: boolean; bold?: boole
 }
 
 function TotalArea(props: {
-  columns: readonly Column[]
+  columns: readonly TokenColumn[]
   totals: TokenTotals
   count: number
   exact: boolean
@@ -655,11 +626,11 @@ function ErrorState(props: { text: string }) {
   )
 }
 
-function cell(text: string, column: Column, color?: string): Cell {
+function cell(text: string, column: TokenColumn, color?: string): Cell {
   return { text, width: column.width, align: column.align, ...(color === undefined ? {} : { color }) }
 }
 
-function rowCells(columns: readonly Column[], row: TokenRow, exact: boolean): Cell[] {
+function rowCells(columns: readonly TokenColumn[], row: TokenRow, exact: boolean): Cell[] {
   return columns.map((column) => {
     switch (column.key) {
       case "provider":
@@ -686,7 +657,7 @@ function rowCells(columns: readonly Column[], row: TokenRow, exact: boolean): Ce
   })
 }
 
-function totalCells(columns: readonly Column[], totals: TokenTotals, count: number, exact: boolean): Cell[] {
+function totalCells(columns: readonly TokenColumn[], totals: TokenTotals, count: number, exact: boolean): Cell[] {
   return columns.map((column) => {
     switch (column.key) {
       case "provider":
@@ -713,23 +684,11 @@ function totalCells(columns: readonly Column[], totals: TokenTotals, count: numb
   })
 }
 
-function truncate(value: string, width: number): string {
-  if (width <= 0) return ""
-  if (value.length <= width) return value.padEnd(width)
-  if (width === 1) return "…"
-  return `${value.slice(0, width - 1)}…`
-}
-
 function shorten(value: string, width: number): string {
   if (width <= 0) return ""
   if (value.length <= width) return value
   if (width === 1) return "…"
   return `${value.slice(0, width - 1)}…`
-}
-
-function padStart(value: string, width: number): string {
-  if (value.length >= width) return value.slice(0, width)
-  return value.padStart(width)
 }
 
 function formatClock(ms: number): string {

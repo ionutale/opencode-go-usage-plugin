@@ -19,8 +19,6 @@ export type StatsModel = {
 
 /** The subset of SessionStatsInfo the token view needs. */
 export type StatsResponse = {
-  range: { from: number; to: number }
-  tokens: TokenCounts
   models: readonly StatsModel[]
 }
 
@@ -63,7 +61,7 @@ export type SortDirection = "asc" | "desc"
 const FIVE_HOURS_MS = 5 * 60 * 60 * 1000
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
 
-function finite(value: number | undefined): number {
+function finite(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0
 }
 
@@ -119,7 +117,7 @@ export function rangeWindow(key: RangeKey, usage: UsageResult | undefined, now: 
   if (key === "week") {
     if (usage?.stale !== true) {
       const reset = resetTime(usage?.usage.weekly.resetsAt)
-      if (reset !== undefined) {
+      if (reset !== undefined && reset > now) {
         const from = reset - SEVEN_DAYS_MS
         if (from < to) return { key, from, to, approximate: false }
       }
@@ -129,7 +127,7 @@ export function rangeWindow(key: RangeKey, usage: UsageResult | undefined, now: 
 
   if (usage?.stale !== true) {
     const reset = resetTime(usage?.usage.monthly.resetsAt)
-    if (reset !== undefined) {
+    if (reset !== undefined && reset > now) {
       const from = subtractUtcMonth(reset)
       if (from < to) return { key, from, to, approximate: false }
     }
@@ -292,4 +290,223 @@ export function describeRange(window: RangeWindow, timezone: string): string {
         : `Subscription month · ${formatTimestamp(window.from ?? window.to, timezone)} → ${end} (${timezone})`
 
   return window.approximate ? `${label} · quota unavailable (fallback)` : label
+}
+
+/** Pads text to the column width, truncating with an ellipsis when it is too long. */
+export function fitText(value: string, width: number): string {
+  if (width <= 0) return ""
+  if (value.length <= width) return value.padEnd(width)
+  if (width === 1) return "…"
+  return `${value.slice(0, width - 1)}…`
+}
+
+/** Pads a numeric string, but never truncates it: losing digits is worse than overflowing. */
+export function fitNumber(value: string, width: number): string {
+  if (width <= 0) return value
+  return value.length < width ? value.padStart(width) : value
+}
+
+export class StatsParseError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "StatsParseError"
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+/**
+ * Validates the subset of `SessionStatsInfo` the token view uses. Bad rows are
+ * skipped so one malformed entry cannot crash a render; a payload without a
+ * models array is a hard error.
+ */
+export function parseStatsResponse(input: unknown): StatsResponse {
+  if (!isRecord(input)) throw new StatsParseError("local usage response is not an object")
+  const rawModels = input.models
+  if (!Array.isArray(rawModels)) throw new StatsParseError("local usage response is missing models")
+
+  const models: StatsModel[] = []
+  for (const item of rawModels) {
+    if (!isRecord(item)) continue
+    const model = item.model
+    if (!isRecord(model)) continue
+    if (typeof model.providerID !== "string" || model.providerID.length === 0) continue
+    if (typeof model.id !== "string" || model.id.length === 0) continue
+    const tokens = item.tokens
+    if (!isRecord(tokens) || !isRecord(tokens.cache)) continue
+
+    models.push({
+      model: {
+        id: model.id,
+        providerID: model.providerID,
+        ...(typeof model.variant === "string" && model.variant.length > 0 ? { variant: model.variant } : {}),
+      },
+      steps: finite(item.steps),
+      tokens: {
+        input: finite(tokens.input),
+        output: finite(tokens.output),
+        reasoning: finite(tokens.reasoning),
+        cache: { read: finite(tokens.cache.read), write: finite(tokens.cache.write) },
+      },
+      cost: finite(item.cost),
+    })
+  }
+
+  return { models }
+}
+
+export type ColumnKey =
+  | "provider"
+  | "model"
+  | "input"
+  | "output"
+  | "reasoning"
+  | "cacheRead"
+  | "cacheWrite"
+  | "total"
+  | "steps"
+  | "cost"
+
+export type TokenColumn = {
+  key: ColumnKey
+  label: string
+  width: number
+  align: "left" | "right"
+}
+
+type ColumnSpec = TokenColumn & { optional?: boolean }
+
+export type ColumnOptions = {
+  width: number
+  exact: boolean
+  cost: boolean
+}
+
+/**
+ * Builds a table that fits `options.width` without ever truncating a numeric
+ * value. Optional columns are dropped in the spec's priority order:
+ * reasoning, steps, cache write, then the user-requested cost column.
+ */
+export function tokenColumns(
+  rows: readonly TokenRow[],
+  totals: TokenTotals,
+  options: ColumnOptions,
+): TokenColumn[] {
+  const exact = options.exact
+  const providerWidth = Math.min(
+    18,
+    Math.max(12, 5, ...rows.map((row) => row.providerID.length)),
+  )
+  const inputWidth = Math.max(
+    9,
+    5,
+    formatTokens(totals.input, exact).length,
+    ...rows.map((row) => formatTokens(row.input, exact).length),
+  )
+  const outputWidth = Math.max(
+    8,
+    6,
+    formatTokens(totals.output, exact).length,
+    ...rows.map((row) => formatTokens(row.output, exact).length),
+  )
+  const reasoningWidth = Math.max(
+    9,
+    9,
+    formatTokens(totals.reasoning, exact).length,
+    ...rows.map((row) => formatTokens(row.reasoning, exact).length),
+  )
+  const cacheReadWidth = Math.max(
+    10,
+    7,
+    formatTokens(totals.cacheRead, exact).length,
+    ...rows.map((row) => formatTokens(row.cacheRead, exact).length),
+  )
+  const cacheWriteWidth = Math.max(
+    10,
+    7,
+    formatTokens(totals.cacheWrite, exact).length,
+    ...rows.map((row) => formatTokens(row.cacheWrite, exact).length),
+  )
+  const totalWidth = Math.max(
+    10,
+    5,
+    formatTokens(totals.total, exact).length,
+    ...rows.map((row) => formatTokens(row.total, exact).length),
+  )
+  const stepsWidth = Math.max(
+    6,
+    5,
+    formatTokens(totals.steps, true).length,
+    ...rows.map((row) => formatTokens(row.steps, true).length),
+  )
+  const costWidth = Math.max(
+    9,
+    5,
+    formatCost(totals.cost).length,
+    ...rows.map((row) => formatCost(row.cost).length),
+  )
+
+  const specs = new Map<ColumnKey, ColumnSpec>([
+    ["provider", { key: "provider", label: "Provider", width: providerWidth, align: "left" }],
+    ["model", { key: "model", label: "Model", width: 14, align: "left" }],
+    ["input", { key: "input", label: "Input", width: inputWidth, align: "right" }],
+    ["output", { key: "output", label: "Output", width: outputWidth, align: "right" }],
+    ["reasoning", { key: "reasoning", label: "Reasoning", width: reasoningWidth, align: "right", optional: true }],
+    ["cacheRead", { key: "cacheRead", label: "Cache R", width: cacheReadWidth, align: "right" }],
+    ["cacheWrite", { key: "cacheWrite", label: "Cache W", width: cacheWriteWidth, align: "right", optional: true }],
+    ["total", { key: "total", label: "Total", width: totalWidth, align: "right" }],
+    ["steps", { key: "steps", label: "Steps", width: stepsWidth, align: "right", optional: true }],
+    ["cost", { key: "cost", label: "Cost*", width: costWidth, align: "right", optional: true }],
+  ])
+
+  const required: ColumnKey[] = ["provider", "model", "input", "output", "cacheRead", "total"]
+  const optional: ColumnKey[] = [
+    "reasoning",
+    "steps",
+    "cacheWrite",
+    ...(options.cost ? (["cost"] as const) : []),
+  ]
+  const enabled = new Set<ColumnKey>([...required, ...optional])
+  const order: ColumnKey[] = [
+    "provider",
+    "model",
+    "input",
+    "output",
+    "reasoning",
+    "cacheRead",
+    "cacheWrite",
+    "total",
+    "steps",
+    "cost",
+  ]
+
+  const build = (): { columns: TokenColumn[]; total: number } => {
+    const selected = order.flatMap((key) => {
+      const spec = specs.get(key)
+      return enabled.has(key) && spec ? [spec] : []
+    })
+    const fixed = selected.reduce((sum, column) => sum + (column.key === "model" ? 0 : column.width), 0)
+    const gaps = Math.max(0, selected.length - 1)
+    const modelWidth = Math.max(14, options.width - fixed - gaps)
+    const columns = selected.map((column) => ({
+      key: column.key,
+      label: column.label,
+      align: column.align,
+      width: column.key === "model" ? modelWidth : column.width,
+    }))
+    return {
+      columns,
+      total: columns.reduce((sum, column) => sum + column.width, 0) + gaps,
+    }
+  }
+
+  let result = build()
+  for (const key of optional) {
+    if (result.total <= options.width) break
+    enabled.delete(key)
+    result = build()
+  }
+  return result.columns
 }

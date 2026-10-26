@@ -139,9 +139,11 @@ loads using the fallback range.
 - Raw provider/model IDs.
 - Columns: Provider, Model, Input, Output, Reasoning, Cache R, Cache W, Total,
   Steps; optional Cost*.
-- Responsive priority: hide Reasoning → Steps → Cache W before ever hiding
-  Provider, Model, Input, Output, Cache R, or Total. Cost, when enabled, is
-  preserved by hiding Reasoning first.
+- Numeric columns size to the widest formatted value in the current range, so
+  exact mode never truncates a number.
+- Optional columns are dropped, in order, until the table fits: Reasoning →
+  Steps → Cache W → Cost. Provider, Model, Input, Output, Cache R, and Total
+  are never dropped.
 - Fixed table header; scrollable rows; pinned total footer.
 - Table height shrinks to the row count (minimum five rows) and caps at the
   available modal height.
@@ -203,9 +205,10 @@ loads using the fallback range.
 ## Testing and verification
 
 - Unit tests (`src/tokens.test.ts`): rolling/week/month/all ranges, month-end
-  and leap-year clamping, quota-unavailable fallback, stale resets, variant
-  aggregation, provider/model filtering, sorting, totals, options, compact and
-  exact formatting, cost formatting, range labels.
+  and leap-year clamping, quota-unavailable fallback, stale and expired resets,
+  variant aggregation, provider/model filtering, sorting, totals, options,
+  compact/exact formatting, cost formatting, range labels, malformed stats
+  payloads, exact numeric column widths, and responsive column removal.
 - `pnpm test`, `pnpm typecheck`, `pnpm build:tui`.
 - Live pty verification at 120×40:
   - `/tokens` opens the xlarge modal.
