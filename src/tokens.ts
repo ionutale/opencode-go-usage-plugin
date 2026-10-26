@@ -17,6 +17,13 @@ export type StatsModel = {
   cost: number
 }
 
+/** The subset of SessionStatsInfo the token view needs. */
+export type StatsResponse = {
+  range: { from: number; to: number }
+  tokens: TokenCounts
+  models: readonly StatsModel[]
+}
+
 export type TokenRow = {
   providerID: string
   modelID: string
