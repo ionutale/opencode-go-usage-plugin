@@ -1,5 +1,10 @@
 # OpenCode Go Usage — `/tokens` Modal (Design)
 
+> **Moved in 0.3.0:** the token usage dashboard/quick view now lives in
+> [opencode-token-usage-dashboard](https://github.com/ionutale/opencode-token-usage-dashboard).
+> This document records the original 0.2.0 modal design; the old plugin keeps
+> the sidebar and `go-usage` RPC only.
+
 - **Date:** 2026-10-26
 - **Status:** Implemented in 0.2.0
 - **Repo:** `github.com/ionutale/opencode-go-usage-plugin`
