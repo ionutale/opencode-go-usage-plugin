@@ -92,6 +92,15 @@ export function usageColor(percent: number): string {
   return GREEN
 }
 
+/** The same thresholds as `usageColor`, for surfaces that take a semantic tone instead of a color. */
+export type UsageTone = "success" | "warning" | "danger"
+
+export function usageTone(percent: number): UsageTone {
+  if (percent >= 75) return "danger"
+  if (percent >= 50) return "warning"
+  return "success"
+}
+
 /** Maps an RPC error to short UI text. Accepts unprefixed or `rpc.<id>.`-prefixed types. */
 export function describeRpcError(error: unknown): string {
   const record = typeof error === "object" && error !== null ? (error as Record<string, unknown>) : undefined

@@ -1,13 +1,14 @@
 {
   "name": "opencode-go-usage-plugin",
-  "version": "0.3.0",
-  "description": "OpenCode Go plan usage (rolling / weekly / monthly) in the sidebar; token usage view moved to opencode-token-usage-dashboard",
+  "version": "0.4.0",
+  "description": "OpenCode Go plan usage (rolling / weekly / monthly) in the sidebar and as a desktop composer pill; token usage view moved to opencode-token-usage-dashboard",
   "type": "module",
   "license": "MIT",
   "repository": "github:ionutale/opencode-go-usage-plugin",
   "exports": {
     ".": "./src/index.ts",
     "./tui": "./dist/tui.js",
+    "./gui-experimental": "./dist/gui-experimental.cjs",
     "./rpc": "./src/rpc.ts"
   },
   "files": [
@@ -22,7 +23,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "smoke": "tsx scripts/smoke.ts",
-    "build:tui": "node scripts/build-tui.mjs"
+    "build:tui": "node scripts/build-tui.mjs",
+    "build:gui": "vite build"
   },
   "engines": {
     "node": ">=20"
@@ -33,7 +35,7 @@
     "solid-js": ">=1.9.0"
   },
   "dependencies": {
-    "@opencode/plugin": "^2.0.18"
+    "@opencode/plugin": "^2.3.2"
   },
   "devDependencies": {
     "@opentui/core": "^0.5.12",
@@ -42,6 +44,8 @@
     "solid-js": "^1.9.15",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
+    "vite": "^8.3.8",
+    "vite-plugin-solid": "^2.11.16",
     "vitest": "^5.0.2"
   }
 }

@@ -12,5 +12,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["src", "scripts", "server.ts", "tui.tsx"]
+  "include": ["src", "scripts", "server.ts", "tui.tsx", "vite.config.ts", "vitest.config.ts"]
 }
