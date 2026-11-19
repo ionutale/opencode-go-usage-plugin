@@ -1,5 +1,6 @@
 node_modules/
 dist/*
 !dist/tui.js
+!dist/gui-experimental.cjs
 .DS_Store
 *.capture.txt
