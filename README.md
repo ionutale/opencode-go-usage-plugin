@@ -73,10 +73,10 @@ longer registers it.
 ## OpenCode Desktop
 
 Desktop has no terminal sidebar, so the plugin renders a composer pill instead.
-The pill shows the highest of the three windows:
+The pill shows all three windows at once:
 
 ```text
-(status icon) Go 77%
+(status icon) Rolling 2% · Weekly 18% · Monthly 9%
 ```
 
 Pick the pill to see one row per window, each with its own status icon and the

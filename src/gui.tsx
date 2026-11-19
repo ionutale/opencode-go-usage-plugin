@@ -38,7 +38,7 @@ export default Plugin.define({
     en: {
       title: "OpenCode Go usage",
       "title.cached": "OpenCode Go usage (cached)",
-      pill: "Go {{percent}}%",
+      pill: "Rolling {{rolling}}% · Weekly {{weekly}}% · Monthly {{monthly}}%",
       unavailable: "Go usage: {{text}}",
       "row.rolling": "Rolling",
       "row.weekly": "Weekly",
@@ -125,12 +125,14 @@ export default Plugin.define({
         }
 
         const { usage, stale } = current.result
-        const percent = Math.round(Math.max(...WINDOWS.map(([key]) => usage[key].percent)))
+        const rolling = Math.round(usage.rolling.percent)
+        const weekly = Math.round(usage.weekly.percent)
+        const monthly = Math.round(usage.monthly.percent)
 
         return {
           icon: "status",
-          tone: usageTone(percent),
-          label: ctx.t("pill", { percent }),
+          tone: usageTone(Math.max(rolling, weekly, monthly)),
+          label: ctx.t("pill", { rolling, weekly, monthly }),
           title: ctx.t(stale ? "title.cached" : "title"),
           rows: WINDOWS.map(([key, labelKey]) => usageRow(key, labelKey, usage[key])),
         }
