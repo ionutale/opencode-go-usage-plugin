@@ -1,7 +1,7 @@
 {
   "name": "opencode-go-usage-plugin",
-  "version": "0.5.3",
-  "description": "OpenCode Go plan usage (rolling / weekly / monthly) in the sidebar and as a desktop composer pill; token usage view moved to opencode-token-usage-dashboard",
+  "version": "0.6.0",
+  "description": "OpenCode Go plan usage in the TUI and desktop, plus automatic account failover",
   "type": "module",
   "license": "MIT",
   "repository": "github:ionutale/opencode-go-usage-plugin",
@@ -13,11 +13,7 @@
   },
   "files": [
     "src",
-    "dist",
-    "server.ts",
-    "tui.tsx",
-    "tsconfig.json",
-    "!src/*.test.ts"
+    "!src/**/*.test.ts"
   ],
   "scripts": {
     "test": "vitest run",

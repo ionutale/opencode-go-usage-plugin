@@ -17,6 +17,7 @@ type Registered = {
 function fakeCtx(credential: unknown) {
   const registered: Registered = {}
   const ctx = {
+    options: { logFile: "/tmp/opencode-go-failover-test.log" },
     integration: {
       connection: {
         active: async (id: string) => (id === "opencode-go" ? { id: "conn-1" } : undefined),
@@ -29,6 +30,13 @@ function fakeCtx(credential: unknown) {
         registered.implementation = implementation as Registered["implementation"]
         return { dispose: async () => {} }
       },
+    },
+    session: {
+      hook: async () => ({ dispose: async () => {} }),
+      synthetic: async () => {},
+    },
+    credential: {
+      activate: async () => {},
     },
   }
   return { ctx, registered }

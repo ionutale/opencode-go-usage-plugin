@@ -1,5 +1,6 @@
 import { Plugin } from "@opencode/plugin"
 import { createAccountsService, extractKey, type AccountsContext } from "./accounts"
+import { failover } from "./failover"
 import { GoUsage } from "./rpc"
 import { UsageError, createUsageService } from "./service"
 import { ERROR_TEXT } from "./usage"
@@ -33,5 +34,8 @@ export default Plugin.define({
       },
       getAll: async (_input, context) => accounts.getAll(context.signal),
     })
+
+    // The failover half shares this plugin's options and hooks the same context.
+    await failover.setup(ctx)
   },
 })
