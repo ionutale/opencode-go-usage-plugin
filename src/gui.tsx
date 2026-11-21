@@ -230,7 +230,20 @@ function UsageDialog(props: {
   const ctx = usePlugin()
 
   return (
-    <div style={{ display: "flex", "flex-direction": "column", gap: "8px", width: "360px" }}>
+    <div
+      style={{
+        display: "flex",
+        "flex-direction": "column",
+        gap: "8px",
+        width: "min(420px, calc(100vw - 32px))",
+        "box-sizing": "border-box",
+        padding: "16px",
+        "border-radius": "12px",
+        background: "var(--v2-background-bg-layer-01, var(--v2-background-bg-base, Canvas))",
+        color: "var(--v2-text-text-base, CanvasText)",
+        "box-shadow": "var(--v2-elevation-overlay, 0 10px 40px rgba(0, 0, 0, 0.25))",
+      }}
+    >
       <div style={{ display: "flex", "align-items": "center", "justify-content": "space-between", gap: "12px" }}>
         <span style={{ "font-weight": 600, "font-size": "13px" }}>{ctx.t("dialog.title")}</span>
         <button
