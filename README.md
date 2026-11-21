@@ -9,6 +9,11 @@ failover**, in one plugin.
 - **Failover** — when the active credential nears its limit, or hits one, switch
   to the account whose plan renews soonest and keep the turn running.
 
+![The usage rings in the session header](docs/screenshots/header-rings.png)
+
+*Preview of the desktop control, drawn from the widget's own layout and usage
+colors.*
+
 Both halves share one server plugin, one install, and one set of options. The
 failover code used to live in a separate repository; it is now part of this
 package.
@@ -81,6 +86,11 @@ in the session header, first in the row that holds **Toggle session context**,
   never hides the others.
 - The list refreshes every 10 minutes; countdowns tick every 30 seconds. Cached
   values are marked `cached` for up to 5 minutes.
+
+![The OpenCode Go usage dialog](docs/screenshots/usage-dialog.png)
+
+*Preview: every saved credential with its three windows, usage colors, reset
+countdowns, and its own error.*
 
 The desktop half is the `./gui-experimental` part, so it needs the plugin in your
 global `opencode.json(c)`; the desktop app does not read `cli.json`. The GUI API
@@ -235,6 +245,7 @@ pnpm build:tui   # rebuild dist/tui.js after editing src/tui.tsx
 pnpm build:gui   # rebuild dist/gui-experimental.cjs after editing src/gui.tsx
 pnpm test        # 149 unit tests, including the failover half
 pnpm typecheck   # tsc --noEmit
+pnpm screenshots # regenerate the README previews in docs/screenshots
 pnpm smoke       # live call; needs a local Go key (/connect or OPENCODE_API_KEY)
 ```
 

@@ -1,6 +1,6 @@
 {
   "name": "opencode-go-usage-plugin",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "OpenCode Go plan usage in the TUI and desktop, plus automatic account failover",
   "type": "module",
   "license": "MIT",
@@ -25,7 +25,8 @@
     "typecheck": "tsc --noEmit",
     "smoke": "tsx scripts/smoke.ts",
     "build:tui": "node scripts/build-tui.mjs",
-    "build:gui": "vite build"
+    "build:gui": "vite build",
+    "screenshots": "node scripts/screenshots.mjs"
   },
   "engines": {
     "node": ">=20"
