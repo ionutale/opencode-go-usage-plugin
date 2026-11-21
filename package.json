@@ -1,6 +1,6 @@
 {
   "name": "opencode-go-usage-plugin",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "OpenCode Go plan usage in the TUI and desktop, plus automatic account failover",
   "type": "module",
   "license": "MIT",
@@ -13,6 +13,11 @@
   },
   "files": [
     "src",
+    "dist",
+    "server.ts",
+    "tui.tsx",
+    "tsconfig.json",
+    "!src/*.test.ts",
     "!src/**/*.test.ts"
   ],
   "scripts": {
