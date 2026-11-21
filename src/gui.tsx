@@ -4,7 +4,7 @@ import { For, Show, createSignal, onCleanup } from "solid-js"
 import type { AccountUsage } from "./accounts"
 import { ringProgress } from "./rings"
 import { GoUsage } from "./rpc"
-import { describeRpcError, formatResetsIn, type UsageWindows } from "./usage"
+import { describeRpcError, formatResetsIn, usageColor, type UsageWindows } from "./usage"
 
 const REFRESH_MS = 30_000
 const TICK_MS = 30_000
@@ -21,11 +21,11 @@ const WINDOWS = [
   ["monthly", "row.monthly"],
 ] as const
 
-/** One identity color per window, like the three activity rings. */
+/** Three concentric rings, each colored by its own usage percentage. */
 const RINGS = [
-  { key: "rolling", color: "#ff375f", radius: 7 },
-  { key: "weekly", color: "#30d158", radius: 4.8 },
-  { key: "monthly", color: "#0a84ff", radius: 2.6 },
+  { key: "rolling", radius: 7 },
+  { key: "weekly", radius: 4.8 },
+  { key: "monthly", radius: 2.6 },
 ] as const
 
 const EMPTY_USAGE: UsageWindows = {
@@ -134,11 +134,12 @@ export default Plugin.define({
       ))
     }
 
-    // The timeline title row, beside "Toggle session context", "Session details",
-    // and "Toggle Review".
+    // The timeline title row. The app's own contributions use order 10
+    // (Toggle session context) and 20 (Session details, Toggle review), so a
+    // negative order puts the rings first, as requested.
     ctx.add(Slot, {
       at: "session.header",
-      order: 20,
+      order: -10,
       render: () => (
         <UsageButton
           usage={() => activeAccount()?.usage}
@@ -161,7 +162,9 @@ function UsageRings(props: { usage: () => UsageWindows | undefined; dim?: boolea
     >
       <For each={RINGS}>
         {(ring) => {
-          const progress = () => ringProgress(props.usage()?.[ring.key].percent ?? 0, ring.radius)
+          const percent = () => props.usage()?.[ring.key].percent ?? 0
+          const color = () => usageColor(percent())
+          const progress = () => ringProgress(percent(), ring.radius)
           return (
             <>
               <circle
@@ -169,7 +172,7 @@ function UsageRings(props: { usage: () => UsageWindows | undefined; dim?: boolea
                 cy="9"
                 r={ring.radius}
                 fill="none"
-                stroke={ring.color}
+                stroke={color()}
                 stroke-opacity="0.18"
                 stroke-width="2"
               />
@@ -178,7 +181,7 @@ function UsageRings(props: { usage: () => UsageWindows | undefined; dim?: boolea
                 cy="9"
                 r={ring.radius}
                 fill="none"
-                stroke={ring.color}
+                stroke={color()}
                 stroke-width="2"
                 stroke-linecap="round"
                 stroke-dasharray={`${progress().filled} ${progress().circumference - progress().filled}`}

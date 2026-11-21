@@ -73,11 +73,12 @@ longer registers it.
 ## OpenCode Desktop
 
 Desktop has no terminal sidebar, so the plugin puts a small activity ring control
-in the session header, beside **Toggle session context**, **Session details**, and
-**Toggle review**:
+in the session header, first in the row that holds **Toggle session context**,
+**Session details**, and **Toggle review**:
 
-- Three concentric rings — rolling (red), weekly (green), monthly (blue) — fill
-  with the active credential's percentages.
+- Three concentric rings — rolling, weekly, monthly, outside in — fill with the
+  active credential's percentages. Each ring is colored by its own usage:
+  green < 50%, yellow 50–74%, red ≥ 75%.
 - Hovering shows the three numbers; clicking opens **OpenCode Go usage**, a list
   of every Go credential you have saved.
 - Each credential in the list shows its own three windows with the countdown to
