@@ -77,14 +77,14 @@ in the session header, first in the row that holds **Toggle session context**,
 - Three concentric rings — rolling, weekly, monthly, outside in — fill with the
   active credential's percentages. Each ring is colored by its own usage:
   green < 50%, yellow 50–74%, red ≥ 75%.
-- Hovering shows the three numbers; clicking opens **OpenCode Go usage**, a list
+- Hovering shows the three numbers; clicking refreshes immediately and opens **OpenCode Go usage**, a list
   of every Go credential you have saved.
 - Each credential in the list shows its own three windows with the countdown to
   each reset, an **Active** badge, and its own error (`not connected`,
   `check API key`, `Go plan required`, `unreachable`) when a read fails. Every
   percentage is colored by its own usage with the same thresholds; one bad key
   never hides the others.
-- The list refreshes every 10 minutes; countdowns tick every 30 seconds. Cached
+- The list refreshes every 10 minutes, and immediately when you click the rings; countdowns tick every 30 seconds. Cached
   values are marked `cached` for up to 5 minutes.
 
 ![The OpenCode Go usage dialog](docs/screenshots/usage-dialog.png)

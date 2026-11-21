@@ -71,8 +71,13 @@ export const GoUsage = Rpc.define({
     },
     getAll: {
       // Every Go credential with its own usage. Per-account failures are carried
-      // in the payload so one bad key never hides the others.
-      input: NO_INPUT,
+      // in the payload so one bad key never hides the others. `fresh` skips the
+      // server cache, for the widget's click-to-refresh.
+      input: {
+        type: "object",
+        properties: { fresh: { type: "boolean" } },
+        additionalProperties: false,
+      },
       output: {
         type: "object",
         properties: {

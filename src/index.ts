@@ -32,7 +32,8 @@ export default Plugin.define({
           throw error
         }
       },
-      getAll: async (_input, context) => accounts.getAll(context.signal),
+      getAll: async (input, context) =>
+        accounts.getAll(context.signal, { fresh: (input as { fresh?: boolean } | undefined)?.fresh === true }),
     })
 
     // The failover half shares this plugin's options and hooks the same context.

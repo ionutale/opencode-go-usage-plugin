@@ -38,7 +38,7 @@ export type AccountsServiceOptions = {
 }
 
 export type AccountsService = {
-  getAll: (signal?: AbortSignal) => Promise<{ accounts: AccountUsage[] }>
+  getAll: (signal?: AbortSignal, options?: { fresh?: boolean }) => Promise<{ accounts: AccountUsage[] }>
 }
 
 /** Only `credential` connections are accounts; env and OAuth entries are not. */
@@ -89,10 +89,11 @@ export function createAccountsService(ctx: AccountsContext, options: AccountsSer
     credential: CredentialConnection,
     active: string | undefined,
     signal: AbortSignal | undefined,
+    fresh: boolean,
   ): Promise<AccountUsage> => {
     const base = { credentialID: credential.id, label: credential.label, active: credential.id === active }
     const cached = cache.get(credential.id)
-    if (cached && now() - cached.at < CACHE_TTL_MS) {
+    if (!fresh && cached && now() - cached.at < CACHE_TTL_MS) {
       return { ...base, usage: cached.usage, fetchedAt: new Date(cached.at).toISOString() }
     }
 
@@ -113,10 +114,11 @@ export function createAccountsService(ctx: AccountsContext, options: AccountsSer
   }
 
   return {
-    async getAll(signal) {
+    async getAll(signal, options) {
+      const fresh = options?.fresh === true
       const [active, credentials] = await Promise.all([activeID(), list()])
       // One account's failure must not hide the others.
-      const accounts = await Promise.all(credentials.map((credential) => load(credential, active, signal)))
+      const accounts = await Promise.all(credentials.map((credential) => load(credential, active, signal, fresh)))
       return { accounts }
     },
   }

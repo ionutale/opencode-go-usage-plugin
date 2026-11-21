@@ -134,6 +134,23 @@ describe("createAccountsService", () => {
     expect(keys.length).toBe(first)
   })
 
+  it("bypasses the cache when fresh is true", async () => {
+    let clock = 1_000
+    const { fetch, keys } = stubFetch(() => new Response(JSON.stringify(SAMPLE), { status: 200 }))
+    const service = createAccountsService(fakeContext({ active: "cred_1" }), {
+      provider: "opencode-go",
+      fetch,
+      now: () => clock,
+    })
+
+    await service.getAll()
+    const first = keys.length
+    clock += 1_000
+    await service.getAll(undefined, { fresh: true })
+
+    expect(keys.length).toBe(first * 2)
+  })
+
   it("serves a stale cached value when a refresh fails", async () => {
     let clock = 1_000
     let fail = false

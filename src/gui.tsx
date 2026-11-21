@@ -63,17 +63,20 @@ export default Plugin.define({
     onCleanup(() => clearInterval(tick))
 
     // Poll only while a session is routed, scoped to its location. Each run owns
-    // its timer and in-flight request, so changing location ends both.
+    // its timer and in-flight request, so changing location ends both. The click
+    // handler reuses the current run's refresh with `fresh: true`.
+    let refreshNow: ((fresh?: boolean) => Promise<void>) | undefined
+
     createKeyed(
       () => ctx.sessions.current()?.location,
       (location) => {
         const controller = new AbortController()
 
-        const refresh = async () => {
+        const refresh = async (fresh = false) => {
           try {
             // JSON-Schema RPC output types as `unknown`; the server contract fixes the shape.
             const result = await ctx.client.rpc(GoUsage).getAll(
-              {},
+              fresh ? { fresh: true } : {},
               {
                 location,
                 signal: AbortSignal.any([controller.signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
@@ -86,10 +89,12 @@ export default Plugin.define({
           }
         }
 
+        refreshNow = refresh
         void refresh()
         const timer = setInterval(() => void refresh(), REFRESH_MS)
 
         onCleanup(() => {
+          refreshNow = undefined
           clearInterval(timer)
           controller.abort()
         })
@@ -129,6 +134,8 @@ export default Plugin.define({
     }
 
     const openUsage = () => {
+      // Refresh in the background; the dialog reads the same signals and fills in.
+      void refreshNow?.(true)
       ctx.dialogs.open((dialog) => (
         <UsageDialog accounts={accounts} error={errorText} now={now} onClose={dialog.close} />
       ))
