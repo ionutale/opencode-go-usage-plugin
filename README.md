@@ -58,7 +58,7 @@ Monthly  ██████░░░░   64%  7d 16h
 | Monthly | Full monthly allotment for the plan | Counts down to your subscription's monthly reset (anchored — not the 1st of the month) |
 
 - Bar and percentage color: **green < 50%**, **yellow 50–74%**, **red ≥ 75%**.
-- Data refreshes every 30 seconds; the reset countdown ticks every 30 seconds.
+- Data refreshes every 10 minutes; the reset countdown ticks every 30 seconds.
 - Percentages are *used* amounts, same as the console dashboard.
 - If the API is unreachable, the last good values stay on screen (dimmed) for up
   to 5 minutes.
@@ -79,7 +79,7 @@ in the session header, first in the row that holds **Toggle session context**,
   `check API key`, `Go plan required`, `unreachable`) when a read fails. Every
   percentage is colored by its own usage with the same thresholds; one bad key
   never hides the others.
-- The list refreshes every 30 seconds; countdowns tick every 30 seconds. Cached
+- The list refreshes every 10 minutes; countdowns tick every 30 seconds. Cached
   values are marked `cached` for up to 5 minutes.
 
 The desktop half is the `./gui-experimental` part, so it needs the plugin in your
@@ -174,7 +174,7 @@ prompt / retry hooks ───┘         │
   API, fetches usage, and caches per credential for 15 seconds. Keys are used
   only as an `Authorization: Bearer` header and are never exposed to the TUI or
   the desktop app.
-- The **TUI plugin** calls the typed RPC `get` (id `go-usage`) every 30 seconds
+- The **TUI plugin** calls the typed RPC `get` (id `go-usage`) every 10 minutes
   and renders `sidebar.footer`.
 - The **desktop GUI plugin** calls `getAll` for every credential and renders the
   header rings and the all-credentials list.

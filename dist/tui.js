@@ -10,7 +10,7 @@ import { Plugin, usePlugin } from "@opencode/plugin/tui";
 import { Show, createSignal } from "solid-js";
 import { GoUsage } from "../src/rpc.ts";
 import { barSegments, describeRpcError, formatResetsIn, usageColor } from "../src/usage.ts";
-const REFRESH_MS = 30_000;
+const REFRESH_MS = 600_000;
 const TICK_MS = 30_000;
 const REQUEST_TIMEOUT_MS = 15_000;
 export default Plugin.define({

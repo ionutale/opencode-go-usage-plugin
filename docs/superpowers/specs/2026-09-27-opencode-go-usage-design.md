@@ -75,7 +75,7 @@ rolling / weekly / monthly numbers as the OpenCode console dashboard.
 ┌─ TUI process ────────────────┐      ┌─ OpenCode server ──────────────────┐      ┌─ opencode.ai ───────┐
 │ tui.tsx                      │ RPC  │ index.ts (server plugin)           │ HTTP │ /zen/go/v1/usage    │
 │ • sidebar.footer slot        │─────▶│ • resolves opencode-go credential  │─────▶│ (Bearer key)        │
-│ • polls every 30s            │ get  │ • fetches + 15s cache              │      │ rolling/weekly/     │
+│ • polls every 10m            │ get  │ • fetches + 15s cache              │      │ rolling/weekly/     │
 │ • ticks countdown locally    │◀─────│ • serves last-good on failure      │      │ monthly             │
 └──────────────────────────────┘      └────────────────────────────────────┘      └─────────────────────┘
 ```
@@ -195,7 +195,7 @@ Per window, one row: `<name>  <bar>  <pct>  <countdown>`
 
 Update cadence (TUI):
 
-- Fetch immediately on setup, then every 30s.
+- Fetch immediately on setup, then every 10 minutes.
 - Re-render countdown every 30s from the last successful response, without
   refetching.
 - Both timers cleared in the plugin teardown function.
@@ -320,7 +320,7 @@ opencode-go-usage-plugin/
    percentages, and countdowns matching `/zen/go/v1/usage` within one poll
    cycle.
 2. Countdown text updates every ~30s without refetching; data refetches every
-   ~30s.
+   ~10 minutes.
 3. With no connection / bad key / no subscription / offline, the widget shows
    the mapped dim one-liner instead of crashing or logging noisily.
 4. The widget works when the TUI is connected to a remote server (key stays
