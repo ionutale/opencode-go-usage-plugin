@@ -199,6 +199,7 @@ function UsageButton(props: { usage: () => UsageWindows | undefined; summary: ()
   return (
     <button
       type="button"
+      data-testid="usage-rings"
       onClick={props.onOpen}
       title={props.summary()}
       aria-label={props.summary()}
@@ -231,6 +232,7 @@ function UsageDialog(props: {
 
   return (
     <div
+      data-testid="usage-dialog"
       style={{
         display: "flex",
         "flex-direction": "column",

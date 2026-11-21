@@ -1,6 +1,6 @@
 {
   "name": "opencode-go-usage-plugin",
-  "version": "0.6.2",
+  "version": "0.7.0",
   "description": "OpenCode Go plan usage in the TUI and desktop, plus automatic account failover",
   "type": "module",
   "license": "MIT",
@@ -41,6 +41,7 @@
   "devDependencies": {
     "@opentui/core": "^0.5.12",
     "@opentui/solid": "^0.5.12",
+    "@playwright/test": "^1.65.1",
     "@types/node": "^26.6.3",
     "solid-js": "^1.9.15",
     "tsx": "^4.23.15",
