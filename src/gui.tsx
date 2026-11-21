@@ -2,13 +2,10 @@
 import { Plugin, Slot, createKeyed, usePlugin } from "@opencode/plugin/gui"
 import { For, Show, createSignal, onCleanup } from "solid-js"
 import type { AccountUsage } from "./accounts"
+import { REFRESH_MS, REQUEST_TIMEOUT_MS, TICK_MS } from "./constants"
 import { ringProgress } from "./rings"
 import { GoUsage } from "./rpc"
 import { describeRpcError, formatResetsIn, usageColor, type UsageWindows } from "./usage"
-
-const REFRESH_MS = 600_000
-const TICK_MS = 30_000
-const REQUEST_TIMEOUT_MS = 15_000
 
 type ViewState =
   | { phase: "loading" }
@@ -28,16 +25,11 @@ const RINGS = [
   { key: "monthly", radius: 2.6 },
 ] as const
 
-const EMPTY_USAGE: UsageWindows = {
-  rolling: { status: "unknown", percent: 0, resetsAt: "" },
-  weekly: { status: "unknown", percent: 0, resetsAt: "" },
-  monthly: { status: "unknown", percent: 0, resetsAt: "" },
-}
-
 export default Plugin.define({
   i18n: {
     en: {
       "rings.loading": "Go usage: loading…",
+      "rings.timedOut": "timed out",
       "rings.unavailable": "Go usage: {{text}}",
       "rings.noUsage": "Go usage unavailable",
       "rings.tooltip": "{{label}} — rolling {{rolling}}% · weekly {{weekly}}% · monthly {{monthly}}%",
@@ -73,19 +65,32 @@ export default Plugin.define({
         const controller = new AbortController()
 
         const refresh = async (fresh = false) => {
+          let timedOut = false
+          const timeout = new AbortController()
+          const timer = setTimeout(() => {
+            timedOut = true
+            timeout.abort()
+          }, REQUEST_TIMEOUT_MS)
+
           try {
             // JSON-Schema RPC output types as `unknown`; the server contract fixes the shape.
             const result = await ctx.client.rpc(GoUsage).getAll(
               fresh ? { fresh: true } : {},
               {
                 location,
-                signal: AbortSignal.any([controller.signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
+                signal: AbortSignal.any([controller.signal, timeout.signal]),
               },
             )
             setState({ phase: "ok", accounts: (result as { accounts: AccountUsage[] }).accounts })
           } catch (error) {
             if (controller.signal.aborted) return
+            if (timedOut) {
+              setState({ phase: "error", text: ctx.t("rings.timedOut") })
+              return
+            }
             setState({ phase: "error", text: describeRpcError(error) })
+          } finally {
+            clearTimeout(timer)
           }
         }
 
@@ -101,6 +106,10 @@ export default Plugin.define({
       },
       {
         equals: (left, right) => left.directory === right.directory && left.workspaceID === right.workspaceID,
+        otherwise: () => {
+          refreshNow = undefined
+          setState({ phase: "loading" })
+        },
       },
     )
 

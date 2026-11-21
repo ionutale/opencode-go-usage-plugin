@@ -8,11 +8,9 @@ import { createComponent as _$createComponent } from "@opentui/solid";
 /** @jsxImportSource @opentui/solid */
 import { Plugin, usePlugin } from "@opencode/plugin/tui";
 import { Show, createSignal } from "solid-js";
+import { REFRESH_MS, REQUEST_TIMEOUT_MS, TICK_MS } from "../src/constants.ts";
 import { GoUsage } from "../src/rpc.ts";
 import { barSegments, describeRpcError, formatResetsIn, usageColor } from "../src/usage.ts";
-const REFRESH_MS = 600_000;
-const TICK_MS = 30_000;
-const REQUEST_TIMEOUT_MS = 15_000;
 export default Plugin.define({
   id: "opencode-go-usage.tui",
   setup(context) {
@@ -21,19 +19,21 @@ export default Plugin.define({
       phase: "loading"
     });
     const [now, setNow] = createSignal(Date.now());
+    const controller = new AbortController();
     const refresh = async () => {
       try {
         // JSON-Schema RPC output types as `unknown`; the server contract fixes the shape.
         const location = context.location ?? context.data.location.default();
         const result = await rpc.get({}, {
           location,
-          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)])
         });
         setState({
           phase: "ok",
           result: result
         });
       } catch (error) {
+        if (controller.signal.aborted) return;
         setState({
           phase: "error",
           text: describeRpcError(error)
@@ -51,6 +51,7 @@ export default Plugin.define({
       })
     });
     return () => {
+      controller.abort();
       clearInterval(refreshTimer);
       clearInterval(tickTimer);
     };

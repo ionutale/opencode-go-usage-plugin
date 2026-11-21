@@ -52,7 +52,7 @@ sidebar and the desktop rings appear automatically; no separate install step.
 
 ```text
 Rolling  ████░░░░░░   40%  1h 13m
-Weekly   ████████░░   77%  6h 9m
+Weekly   ████████░░   77%  6h 10m
 Monthly  ██████░░░░   64%  7d 16h
 ```
 
@@ -138,6 +138,12 @@ pending, the error surfaces instead of a buffer-only retry.
 - If a credential's key cannot be read, that account is treated as unmeasured and
   the plugin rotates blind on a limit error, then re-checks.
 - Usage percentages are coarse; the decisions are only as precise as they are.
+- The active credential is global. A proactive switch in one session changes the
+  key the next request in another session uses; the plugin cannot pin a key per
+  in-flight turn.
+- The usage endpoint is fixed to `https://opencode.ai/zen/go/v1/usage`, and the
+  failover log to `~/.local/share/opencode/go-failover.log`; neither is
+  configurable.
 
 ## Options
 
@@ -158,16 +164,13 @@ pending, the error surfaces instead of a buffer-only retry.
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `provider` | `"opencode-go"` | Integration and provider the failover half manages |
 | `credentialOrder` | `[]` | Preferred order, by label or credential ID; ties use it |
 | `proactiveThreshold` | `90` | Percent at which a new turn moves off the active account; `0` disables |
 | `hysteresisPoints` | `10` | Minimum headroom gain required to switch |
 | `usageCacheMs` | `10000` | Failover's own usage cache lifetime |
 | `waitBufferMs` | `5000` | Added to a window reset before retrying |
-| `maxWaitMs` | `Infinity` | Clamp for a single wait; `Infinity` always waits |
+| `maxWaitMs` | `300000` | Maximum wait before the error is handed back to OpenCode (five minutes) |
 | `notify` | `false` | Post a short session message when the plugin switches or waits |
-| `usageEndpoint` | `https://opencode.ai/zen/go/v1/usage` | Usage API; advanced/testing only |
-| `logFile` | `~/.local/share/opencode/go-failover.log` | One line per failover decision |
 
 The usage display ignores these options; it always polls the official endpoint.
 
@@ -243,7 +246,7 @@ when both plugins are installed.
 pnpm install
 pnpm build:tui   # rebuild dist/tui.js after editing src/tui.tsx
 pnpm build:gui   # rebuild dist/gui-experimental.cjs after editing src/gui.tsx
-pnpm test        # 149 unit tests, including the failover half
+pnpm test        # 152 unit tests, including the failover half
 pnpm typecheck   # tsc --noEmit
 pnpm screenshots # regenerate the README previews in docs/screenshots
 pnpm smoke       # live call; needs a local Go key (/connect or OPENCODE_API_KEY)

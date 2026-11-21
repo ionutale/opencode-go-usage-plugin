@@ -1,7 +1,7 @@
 import { appendFileSync, mkdirSync } from "node:fs"
 import { dirname } from "node:path"
 import { describe, expect, it, vi } from "vitest"
-import { createLogger } from "./log"
+import { createLogger, sanitize } from "./log"
 
 describe("createLogger", () => {
   it("writes one timestamped line per message", () => {
@@ -58,10 +58,9 @@ describe("createLogger", () => {
   })
 })
 
-describe("default filesystem appender", () => {
-  it("is importable without side effects", async () => {
-    expect(typeof appendFileSync).toBe("function")
-    expect(typeof mkdirSync).toBe("function")
-    expect(typeof dirname).toBe("function")
+
+describe("sanitize", () => {
+  it("strips line breaks and control characters", () => {
+    expect(sanitize("a\nb\rc\u0007d")).toBe("a b c d")
   })
 })

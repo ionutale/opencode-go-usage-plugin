@@ -33,13 +33,14 @@ const NON_LIMIT_MESSAGE = /context[_ ]length|context window|too many tokens|payl
 
 export function classifyLimitError(error: { type: string; message: string; status?: number }): boolean {
   const type = (error.type ?? "").toLowerCase()
-  // Decide on the host's taxonomy first: a Go limit can arrive with any status,
-  // and a workspace or model budget pause carries limit-shaped words.
-  if (NON_LIMIT_TYPES.has(type)) return false
+  // The host's quota types are authoritative whatever the status.
   if (LIMIT_TYPES.has(type)) return true
+  // Budget, free-tier, auth, filter, and transport failures are not fixed by
+  // switching accounts, even when they arrive as a 4xx.
+  if (NON_LIMIT_TYPES.has(type) && type !== "provider.invalid-request") return false
+  // 429/402 are limit errors whatever the type, including an untyped 429.
   if (error.status === 429 || error.status === 402) return true
-  // A definitive 4xx is the request's fault, not the account's: context overflow,
-  // bad tool schema, aborted turn. Rotating accounts cannot fix it.
+  // A definitive 4xx is the request's fault, not the account's.
   if (typeof error.status === "number" && error.status >= 400 && error.status < 500) return false
 
   const message = error.message ?? ""
@@ -57,7 +58,7 @@ export function evaluate(account: Account, usage: UsageWindows | undefined): Eva
   return { ...account, usage, state: blocked ? "blocked" : "available", headroom, renewalAt: Number.isFinite(renewal) ? renewal : undefined }
 }
 
-function orderIndex(order: readonly string[], account: Account): number {
+export function orderIndex(order: readonly string[], account: Account): number {
   const index = order.findIndex((entry) => entry === account.credentialID || entry === account.label)
   return index === -1 ? Number.MAX_SAFE_INTEGER : index
 }

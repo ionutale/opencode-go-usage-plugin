@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { createUsageClient, parseUsageResponse, USAGE_ENDPOINT, UsageParseError } from "./usage"
+import { USAGE_ENDPOINT, UsageParseError, parseUsageResponse } from "../usage"
+import { createUsageClient } from "./usage"
 
 const SAMPLE = {
   usage: {
@@ -100,15 +101,4 @@ describe("createUsageClient", () => {
     expect(calls).toHaveLength(2)
   })
 
-  it("gives up on a hung request after its timeout", async () => {
-    const client = createUsageClient({
-      cacheMs: 10_000,
-      timeoutMs: 20,
-      fetch: ((_url: string, init?: RequestInit) =>
-        new Promise((_resolve, reject) => {
-          init?.signal?.addEventListener("abort", () => reject(new Error("aborted")))
-        })) as typeof fetch,
-    })
-    await expect(client.read({ credentialID: "cred_1", key: "a" })).rejects.toThrow("aborted")
-  })
 })

@@ -1,3 +1,4 @@
+import { credentialConnections, extractKey, type CredentialConnection } from "../accounts"
 import type { Account } from "./policy"
 
 export type { Account }
@@ -20,53 +21,33 @@ export type AccountContext = {
   credential: { activate: (input: { credentialID: string }) => Promise<void> }
 }
 
-export function extractKey(credential: unknown): string | undefined {
-  if (typeof credential === "string" && credential.length > 0) return credential
-  if (typeof credential === "object" && credential !== null) {
-    const record = credential as Record<string, unknown>
-    for (const candidate of [record.key, record.apiKey, record.value]) {
-      if (typeof candidate === "string" && candidate.length > 0) return candidate
-    }
-  }
-  return undefined
-}
-
-function asCredential(value: unknown): { id: string; label: string } | undefined {
-  if (typeof value !== "object" || value === null) return undefined
-  const record = value as Record<string, unknown>
-  if (record.type !== "credential") return undefined
-  if (typeof record.id !== "string" || record.id.length === 0) return undefined
-  return { id: record.id, label: typeof record.label === "string" && record.label.length > 0 ? record.label : record.id }
-}
+const asAccount = (credential: CredentialConnection): Account => ({
+  credentialID: credential.id,
+  label: credential.label,
+})
 
 export function createAccountStore(ctx: AccountContext, provider: string): AccountStore {
-  let connections: ReadonlyArray<unknown> | undefined
-
-  const load = async () => {
-    if (connections) return connections
+  // Re-list on every use: credentials can be added or removed while the server
+  // runs, and a transient empty response must not disable failover forever.
+  const load = async (): Promise<CredentialConnection[]> => {
     const result = await ctx.integration.get({ integrationID: provider })
-    connections = result.data.connections ?? []
-    return connections
+    return credentialConnections(result.data.connections ?? [])
   }
 
   return {
     async list() {
-      const entries = await load()
-      return entries.flatMap((entry) => {
-        const credential = asCredential(entry)
-        return credential ? [{ credentialID: credential.id, label: credential.label }] : []
-      })
+      return (await load()).map(asAccount)
     },
 
     async activeID() {
-      return asCredential(await ctx.integration.connection.active(provider))?.id
+      const active = await ctx.integration.connection.active(provider)
+      return credentialConnections([active])[0]?.id
     },
 
     async key(account) {
-      const entries = await load()
-      const connection = entries.find((entry) => asCredential(entry)?.id === account.credentialID)
+      const connection = (await load()).find((entry) => entry.id === account.credentialID)
       if (!connection) return undefined
-      return extractKey(await ctx.integration.connection.resolve(connection))
+      return extractKey(await ctx.integration.connection.resolve(connection.connection))
     },
 
     async activate(credentialID) {

@@ -189,18 +189,18 @@ hooks and cannot start a model turn.
 
 ## Configuration
 
-Passed through the plugin's `options` object in `opencode.jsonc`:
+Passed through the plugin's `options` object in `opencode.jsonc`. The provider,
+usage endpoint, and log path are fixed and no longer configurable:
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `provider` | `"opencode-go"` | Integration and provider the plugin manages |
 | `credentialOrder` | `[]` | Preferred order, by label or credential ID |
 | `proactiveThreshold` | `90` | Percent at which a new turn switches off the active account; `0` disables |
 | `hysteresisPoints` | `10` | Minimum headroom gain required to switch |
 | `usageCacheMs` | `10000` | Cache lifetime for usage reads |
 | `waitBufferMs` | `5000` | Added to a window reset before retrying |
 | `notify` | `false` | Post a synthetic session message on switch or long wait |
-| `maxWaitMs` | `Infinity` | Safety clamp for a single wait; `Infinity` means always wait |
+| `maxWaitMs` | `300000` | Maximum wait before the error is handed back to OpenCode |
 
 ## Failure modes
 

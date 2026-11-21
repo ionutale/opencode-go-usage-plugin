@@ -1,9 +1,19 @@
 import { describe, expect, it } from "vitest"
 import { DEFAULTS, readConfig } from "./config"
 
+const DOCUMENTED_DEFAULTS = {
+  credentialOrder: [],
+  proactiveThreshold: 90,
+  hysteresisPoints: 10,
+  usageCacheMs: 10_000,
+  waitBufferMs: 5_000,
+  notify: false,
+  maxWaitMs: 300_000,
+}
+
 describe("readConfig", () => {
   it("returns the documented defaults for undefined options", () => {
-    expect(readConfig(undefined)).toEqual(DEFAULTS)
+    expect(readConfig(undefined)).toEqual(DOCUMENTED_DEFAULTS)
   })
 
   it("keeps valid overrides", () => {
@@ -22,21 +32,18 @@ describe("readConfig", () => {
     expect(config.credentialOrder).toEqual([])
   })
 
-  it("accepts an explicit credential order and provider", () => {
-    expect(readConfig({ credentialOrder: ["Work", "Personal"], provider: "acme" }).credentialOrder).toEqual([
-      "Work",
-      "Personal",
-    ])
-    expect(readConfig({ provider: "acme" }).provider).toBe("acme")
+  it("accepts an explicit credential order", () => {
+    expect(readConfig({ credentialOrder: ["Work", "Personal"] }).credentialOrder).toEqual(["Work", "Personal"])
   })
 
-  it("accepts a usage endpoint override", () => {
-    expect(readConfig({ usageEndpoint: "http://127.0.0.1:9999/usage" }).usageEndpoint).toBe("http://127.0.0.1:9999/usage")
-    expect(readConfig(undefined).usageEndpoint).toBe("https://opencode.ai/zen/go/v1/usage")
+  it("rejects an infinite or negative wait", () => {
+    expect(readConfig({ maxWaitMs: Infinity }).maxWaitMs).toBe(300_000)
+    expect(readConfig({ maxWaitMs: -1 }).maxWaitMs).toBe(300_000)
+    expect(readConfig({ maxWaitMs: Number.NaN }).maxWaitMs).toBe(300_000)
   })
 
-  it("accepts a log file override and defaults to the shared log directory", () => {
-    expect(readConfig({ logFile: "/tmp/go.log" }).logFile).toBe("/tmp/go.log")
-    expect(readConfig(undefined).logFile).toMatch(/go-failover\.log$/)
+  it("keeps the defaults frozen", () => {
+    expect(Object.isFrozen(DEFAULTS)).toBe(true)
+    expect(Object.isFrozen(DEFAULTS.credentialOrder)).toBe(true)
   })
 })

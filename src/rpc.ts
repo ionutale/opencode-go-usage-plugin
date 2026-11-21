@@ -86,6 +86,9 @@ export const GoUsage = Rpc.define({
         required: ["accounts"],
         additionalProperties: false,
       },
+      errors: {
+        upstream: ERROR_SCHEMA,
+      },
     },
   },
   // `Rpc.define` requires an events map; this RPC declares none.

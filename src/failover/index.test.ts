@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { failover } from "./index"
+import { createFailover } from "./index"
+
+const failover = createFailover(() => {})
 
 const HOUR = 3_600_000
+const BASE = Date.now()
 
 type UsageResponse = {
   usage: {
@@ -15,7 +18,7 @@ function usagePayload(
   rolling: number,
   options: { blocked?: boolean; resetInMs?: number; resetAllMs?: number; monthlyResetMs?: number } = {},
 ): UsageResponse {
-  const at = (ms: number) => new Date(Date.now() + ms).toISOString()
+  const at = (ms: number) => new Date(BASE + ms).toISOString()
   const all = options.resetAllMs
   return {
     usage: {
@@ -44,6 +47,7 @@ function fakeContext(input: {
   options?: Record<string, unknown>
   connections?: ReadonlyArray<unknown>
   sessionModel?: string | null
+  failActivation?: string
 }) {
   let active = input.active ?? "cred_1"
   const hooks: Hook[] = []
@@ -52,16 +56,20 @@ function fakeContext(input: {
   const connections = input.connections ?? CONNECTIONS
 
   const ctx = {
-    options: { logFile: "/tmp/opencode-go-failover-test.log", ...(input.options ?? {}) },
+    options: { ...(input.options ?? {}) },
     integration: {
       get: async () => ({ data: { connections } }),
       connection: {
-        active: async () => connections.find((entry: any) => entry.type === "credential" && entry.id === active),
+        active: async () => connections.find((entry) => (entry as Record<string, unknown>).type === "credential" && (entry as Record<string, unknown>).id === active),
         resolve: async (connection: { id: string }) => ({ type: "api", key: connection.id }),
       },
     },
     credential: {
       activate: async ({ credentialID }: { credentialID: string }) => {
+        if (input.failActivation === credentialID) {
+          input.failActivation = undefined
+          throw new Error("activation failed")
+        }
         active = credentialID
         activated.push(credentialID)
       },
@@ -109,7 +117,10 @@ async function setup(input: Parameters<typeof fakeContext>[0]) {
   return fake
 }
 
-function retryEvent(error: { type: string; message: string; status?: number }, attempt = 1) {
+function retryEvent(
+  error: { type: string; message: string; status?: number; retryAfterMs?: number },
+  attempt = 1,
+) {
   return {
     sessionID: "ses_1",
     agent: "build",
@@ -166,6 +177,53 @@ describe("reactive failover", () => {
     expect(event.decision).toEqual({ retry: false })
   })
 
+  it("rotates on a 429 whose message names a quota", async () => {
+    const fake = await setup({
+      usage: { cred_1: usagePayload(40), cred_2: usagePayload(10), cred_3: usagePayload(5) },
+    })
+    const event = retryEvent({ type: "provider.unknown", message: "You have exceeded your quota", status: 429 })
+    await fake.hook("retry")!(event)
+    expect(fake.activated).toHaveLength(1)
+    expect(event.decision).toEqual({ retry: true, delay: 0 })
+  })
+
+  it("keeps the 429 guard when proactive switching is disabled", async () => {
+    const fake = await setup({
+      usage: { cred_1: usagePayload(40), cred_2: usagePayload(10) },
+      options: { proactiveThreshold: 0 },
+    })
+    const event = retryEvent({ type: "provider.rate-limit", message: "RateLimitExceeded", status: 429 })
+    await fake.hook("retry")!(event)
+    expect(fake.activated).toEqual([])
+    expect(event.decision).toEqual({ retry: false })
+  })
+
+  it("tries the next account when activation fails", async () => {
+    const fake = await setup({
+      usage: { cred_1: usagePayload(100, { blocked: true }), cred_2: usagePayload(20), cred_3: usagePayload(10) },
+      failActivation: "cred_3",
+    })
+    const event = retryEvent({ type: "provider.go-limit", message: "usage limit reached", status: 429 })
+    await fake.hook("retry")!(event)
+    expect(fake.activated).toEqual(["cred_2"])
+    expect(event.decision).toEqual({ retry: true, delay: 0 })
+  })
+
+  it("honors the host retryAfter when every reset is already past", async () => {
+    const fake = await setup({
+      usage: {
+        cred_1: usagePayload(100, { blocked: true, resetAllMs: -HOUR }),
+        cred_2: usagePayload(100, { blocked: true, resetAllMs: -HOUR }),
+        cred_3: usagePayload(100, { blocked: true, resetAllMs: -HOUR }),
+      },
+    })
+    const event = retryEvent({ type: "provider.rate-limit", message: "limit reached", status: 429 })
+    event.error.retryAfterMs = 60_000
+    await fake.hook("retry")!(event)
+    expect(event.decision.retry).toBe(true)
+    expect(event.decision.delay).toBeGreaterThanOrEqual(60_000)
+  })
+
   it("still rotates on a named Go limit at 429, even below the threshold", async () => {
     const fake = await setup({
       usage: { cred_1: usagePayload(40), cred_2: usagePayload(30), cred_3: usagePayload(20) },
@@ -201,6 +259,7 @@ describe("reactive failover", () => {
         cred_2: usagePayload(100, { blocked: true, resetInMs: 2 * HOUR }),
         cred_3: usagePayload(100, { blocked: true, resetInMs: 3 * HOUR }),
       },
+      options: { maxWaitMs: 24 * HOUR },
     })
     const event = retryEvent({ type: "provider.rate-limit", message: "weekly limit reached" })
     await fake.hook("retry")!(event)
@@ -351,6 +410,16 @@ describe("proactive switching", () => {
     const fake = await setup({
       usage: { cred_1: usagePayload(40), cred_2: usagePayload(5), cred_3: usagePayload(2) },
       options: { proactiveThreshold: 90 },
+    })
+    await fake.hook("prompt")!({ sessionID: "ses_1" })
+    expect(fake.activated).toEqual([])
+  })
+
+  it("does not switch proactively when the session model is unset", async () => {
+    const fake = await setup({
+      usage: { cred_1: usagePayload(40), cred_2: usagePayload(5), cred_3: usagePayload(2) },
+      options: { proactiveThreshold: 10 },
+      sessionModel: null,
     })
     await fake.hook("prompt")!({ sessionID: "ses_1" })
     expect(fake.activated).toEqual([])

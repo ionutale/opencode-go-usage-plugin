@@ -27,8 +27,8 @@ function fakeContext(input: {
     integration: {
       get: async () => ({ data: { connections } }),
       connection: {
-        active: async () => connections.find((entry: any) => entry.type === "credential" && entry.id === input.active),
-        resolve: async (connection: any) => keys[connection.id],
+        active: async () => connections.find((entry) => (entry as Record<string, unknown>).type === "credential" && (entry as Record<string, unknown>).id === input.active),
+        resolve: async (connection) => keys[(connection as { id: string }).id],
       },
     },
   }

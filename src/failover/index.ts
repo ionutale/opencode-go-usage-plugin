@@ -1,11 +1,23 @@
 import { Plugin } from "@opencode/plugin"
+import { formatDuration } from "../usage"
 import { createAccountStore, type AccountContext } from "./accounts"
 import { readConfig } from "./config"
-import { chooseCandidate, classifyLimitError, evaluate, soonestReset, waitDelay, type Evaluated } from "./policy"
-import { createLogger } from "./log"
+import {
+  chooseCandidate,
+  classifyLimitError,
+  evaluate,
+  orderIndex,
+  soonestReset,
+  waitDelay,
+  type Evaluated,
+} from "./policy"
+import { createLogger, sanitize, type Logger } from "./log"
 import { createUsageClient } from "./usage"
 
-
+const PROVIDER = "opencode-go"
+/** A bare 429 below this usage level is treated as a burst limit, not quota. */
+const RATE_LIMIT_THRESHOLD = 90
+const MAX_TRIED_SESSIONS = 100
 
 type RetryEvent = {
   sessionID: string
@@ -13,29 +25,20 @@ type RetryEvent = {
   decision: { retry: boolean; delay?: number }
 }
 
-let chain: Promise<unknown> = Promise.resolve()
-
-/** Run decisions one at a time so concurrent sessions cannot rotate twice. */
-function serial<T>(task: () => Promise<T>): Promise<T> {
-  const run = chain.then(task, task)
-  chain = run.then(
-    () => undefined,
-    () => undefined,
-  )
-  return run
-}
-
 function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
+  if (error instanceof Error) return error.message
+  if (typeof error === "object" && error !== null) {
+    const record = error as Record<string, unknown>
+    if (typeof record.message === "string") return record.message
+    if (typeof record.type === "string") return record.type
+  }
+  return String(error)
 }
 
 /** Compact countdown for the log, e.g. "renews in 12d 6h". */
 function formatRenewal(at: number | undefined): string {
   if (at === undefined) return "renewal unknown"
-  const minutes = Math.max(0, Math.round((at - Date.now()) / 60_000))
-  if (minutes >= 1440) return `renews in ${Math.floor(minutes / 1440)}d ${Math.floor((minutes % 1440) / 60)}h`
-  if (minutes >= 60) return `renews in ${Math.floor(minutes / 60)}h ${minutes % 60}m`
-  return `renews in ${minutes}m`
+  return `renews in ${formatDuration(Math.max(0, at - Date.now()))}`
 }
 
 function fullest(evaluated: Evaluated): number {
@@ -44,187 +47,233 @@ function fullest(evaluated: Evaluated): number {
   return Math.max(rolling.percent, weekly.percent, monthly.percent)
 }
 
-function byPreference(accounts: readonly Evaluated[], order: readonly string[]): Evaluated[] {
-  const index = (account: Evaluated) => {
-    const found = order.findIndex((entry) => entry === account.credentialID || entry === account.label)
-    return found === -1 ? Number.MAX_SAFE_INTEGER : found
-  }
-  return [...accounts].sort((left, right) => index(left) - index(right))
-}
+export function createFailover(injectedLog?: Logger) {
+  return Plugin.define({
+    id: "opencode-go-failover",
+    async setup(ctx) {
+      const config = readConfig(ctx.options)
+      const log = injectedLog ?? createLogger()
+      const store = createAccountStore(ctx as unknown as AccountContext, PROVIDER)
+      const usage = createUsageClient({ cacheMs: config.usageCacheMs })
+      const tried = new Map<string, Set<string>>()
 
-export const failover = Plugin.define({
-  id: "opencode-go-failover",
-  async setup(ctx) {
-    const config = readConfig(ctx.options)
-    const store = createAccountStore(ctx as unknown as AccountContext, config.provider)
-    const usage = createUsageClient({ cacheMs: config.usageCacheMs, endpoint: config.usageEndpoint })
-    const tried = new Map<string, Set<string>>()
+      // Per instance, so two plugin instances (or tests) do not share a queue.
+      let chain: Promise<unknown> = Promise.resolve()
+      const serial = <T>(task: () => Promise<T>): Promise<T> => {
+        const run = chain.then(task, task)
+        chain = run.then(
+          () => undefined,
+          () => undefined,
+        )
+        return run
+      }
 
-    const log = createLogger({ path: config.logFile })
+      const sessionTried = (sessionID: string): Set<string> => {
+        const existing = tried.get(sessionID) ?? new Set<string>()
+        tried.set(sessionID, existing)
+        if (tried.size > MAX_TRIED_SESSIONS) {
+          const oldest = tried.keys().next().value
+          if (oldest !== undefined) tried.delete(oldest)
+        }
+        return existing
+      }
 
-    const snapshot = async (fresh = false): Promise<Evaluated[]> => {
-      const accounts = await store.list()
-      return Promise.all(
-        accounts.map(async (account) => {
+      const snapshot = async (fresh = false): Promise<Evaluated[]> => {
+        const accounts = await store.list()
+        return Promise.all(
+          accounts.map(async (account) => {
+            try {
+              const key = await store.key(account)
+              if (!key) return evaluate(account, undefined)
+              return evaluate(account, await usage.read({ credentialID: account.credentialID, key }, { fresh }))
+            } catch (error) {
+              log(`${account.label}: usage unavailable (${describe(error)})`)
+              return evaluate(account, undefined)
+            }
+          }),
+        )
+      }
+
+      const notify = async (sessionID: string, text: string) => {
+        if (!config.notify) return
+        try {
+          await ctx.session.synthetic({ sessionID, text })
+        } catch (error) {
+          log(`notification failed: ${describe(error)}`)
+        }
+      }
+
+      const activate = async (account: Evaluated, reason: string) => {
+        await store.activate(account.credentialID)
+        log(`${reason}: ${account.label} (${account.headroom} points of headroom, ${formatRenewal(account.renewalAt)})`)
+      }
+
+      const proactive = async () => {
+        if (config.proactiveThreshold <= 0) return
+        const activeID = await store.activeID()
+        const accounts = await snapshot(false)
+        if (accounts.length < 2) return
+
+        const active = accounts.find((account) => account.credentialID === activeID)
+        if (!active || active.state === "unknown") return
+        if (active.state === "available" && fullest(active) < config.proactiveThreshold) return
+
+        const candidate = chooseCandidate({
+          accounts,
+          activeID,
+          order: config.credentialOrder,
+          hysteresisPoints: config.hysteresisPoints,
+        })
+        if (!candidate) return
+
+        try {
+          await activate(candidate, `switched ahead of the limit (${fullest(active)}% -> ${fullest(candidate)}%)`)
+        } catch (error) {
+          log(`activation failed for ${candidate.label}: ${describe(error)}`)
+        }
+      }
+
+      /** Tries candidates until one activates; a failed account is not retried this turn. */
+      const rotate = async (
+        pool: Evaluated[],
+        activeID: string | undefined,
+        session: Set<string>,
+        reason: string,
+      ): Promise<Evaluated | undefined> => {
+        let remaining = pool
+        for (;;) {
+          const candidate = chooseCandidate({
+            accounts: remaining,
+            activeID,
+            order: config.credentialOrder,
+            hysteresisPoints: 0,
+          })
+          if (!candidate) return undefined
+
           try {
-            const key = await store.key(account)
-            if (!key) return evaluate(account, undefined)
-            return evaluate(account, await usage.read({ credentialID: account.credentialID, key }, { fresh }))
+            await activate(candidate, reason)
+            session.add(candidate.credentialID)
+            return candidate
           } catch (error) {
-            log(`${account.label}: usage unavailable (${describe(error)})`)
-            return evaluate(account, undefined)
+            session.add(candidate.credentialID)
+            log(`activation failed for ${candidate.label}: ${describe(error)}`)
+            remaining = remaining.filter((account) => account.credentialID !== candidate.credentialID)
+          }
+        }
+      }
+
+      await ctx.session.hook("prompt", (event) =>
+        serial(async () => {
+          try {
+            const sessionID = (event as { sessionID?: string }).sessionID
+            if (!sessionID) return
+            // The prompt hook cannot be provider-scoped: skip when the model is
+            // unknown or belongs to another provider.
+            const session = await ctx.session.get({ sessionID })
+            if (!session?.model || session.model.providerID !== PROVIDER) return
+            tried.delete(sessionID)
+            await proactive()
+          } catch (error) {
+            log(`proactive check failed: ${describe(error)}`)
           }
         }),
       )
-    }
 
-    const notify = async (sessionID: string, text: string) => {
-      if (!config.notify) return
-      try {
-        await ctx.session.synthetic({ sessionID, text })
-      } catch (error) {
-        log(`notification failed: ${describe(error)}`)
-      }
-    }
+      await ctx.session.hook(
+        "retry",
+        (event) =>
+          serial(async () => {
+            try {
+              await reactive(event as RetryEvent)
+            } catch (error) {
+              log(`failover failed: ${describe(error)}`)
+            }
+          }),
+        { providerID: PROVIDER },
+      )
 
-    const activate = async (account: Evaluated, reason: string) => {
-      await store.activate(account.credentialID)
-      log(`${reason}: ${account.label} (${account.headroom} points of headroom, ${formatRenewal(account.renewalAt)})`)
-    }
+      async function reactive(event: RetryEvent) {
+        if (!classifyLimitError(event.error)) return
 
-    const proactive = async () => {
-      if (config.proactiveThreshold <= 0) return
-      const activeID = await store.activeID()
-      const accounts = await snapshot(false)
-      if (accounts.length < 2) return
+        const activeID = await store.activeID()
+        const accounts = await snapshot(true)
 
-      const active = accounts.find((account) => account.credentialID === activeID)
-      if (!active || active.state === "unknown") return
-      if (active.state === "available" && fullest(active) < config.proactiveThreshold) return
-
-      const candidate = chooseCandidate({
-        accounts,
-        activeID,
-        order: config.credentialOrder,
-        hysteresisPoints: config.hysteresisPoints,
-      })
-      if (!candidate) return
-
-      await activate(candidate, `switched ahead of the limit (${fullest(active)}% -> ${fullest(candidate)}%)`)
-    }
-
-    await ctx.session.hook("prompt", (event) =>
-      serial(async () => {
-        try {
-          const sessionID = (event as { sessionID?: string }).sessionID
-          if (!sessionID) return
-          // The prompt hook cannot be provider-scoped, so gate on the session's
-          // model: a prompt for another provider must not read Go usage or move
-          // the global Go credential.
-          const session = await ctx.session.get({ sessionID })
-          if (session?.model && session.model.providerID !== config.provider) return
-          tried.delete(sessionID)
-          await proactive()
-        } catch (error) {
-          log(`proactive check failed: ${describe(error)}`)
-        }
-      }),
-    )
-
-    await ctx.session.hook(
-      "retry",
-      (event) =>
-        serial(async () => {
-          try {
-            await reactive(event as RetryEvent)
-          } catch (error) {
-            log(`failover failed: ${describe(error)}`)
-          }
-        }),
-      { providerID: config.provider },
-    )
-
-    async function reactive(event: RetryEvent) {
-      if (!classifyLimitError(event.error)) return
-
-      const activeID = await store.activeID()
-      const accounts = await snapshot(true)
-
-      // A bare 429 is usually a burst rate limit, not quota exhaustion. Rotating
-      // on it makes the burst worse: each retry is another request, often on a
-      // fresh key that is immediately limited too. Unless the host names a quota
-      // type, rotate only when the active account's own usage agrees it is out.
-      const activeNow = accounts.find((account) => account.credentialID === activeID)
-      const typedQuota = /go-?limit|quota/i.test(event.error.type)
-      if (
-        event.error.status === 429 &&
-        !typedQuota &&
-        activeNow?.state === "available" &&
-        fullest(activeNow) < config.proactiveThreshold
-      ) {
-        log(
-          `429 at ${fullest(activeNow)}% looks like a rate limit, not quota; leaving the retry delay to OpenCode`,
-        )
-        return
-      }
-
-      const session = tried.get(event.sessionID) ?? new Set<string>()
-      tried.set(event.sessionID, session)
-      if (activeID) session.add(activeID)
-
-      const untried = accounts.filter((account) => !session.has(account.credentialID))
-      const candidate = chooseCandidate({
-        accounts: untried,
-        activeID,
-        order: config.credentialOrder,
-        hysteresisPoints: 0,
-      })
-
-      if (candidate) {
-        session.add(candidate.credentialID)
-        await activate(candidate, "rotated after a limit error")
-        event.decision = { retry: true, delay: 0 }
-        await notify(event.sessionID, `OpenCode Go switched to ${candidate.label} after hitting a usage limit.`)
-        return
-      }
-
-      const measured = accounts.some((account) => account.state !== "unknown")
-      if (!measured) {
-        const next = byPreference(untried, config.credentialOrder)[0]
-        if (next) {
-          session.add(next.credentialID)
-          await activate(next, "rotated without usage data")
-          event.decision = { retry: true, delay: 0 }
+        // A bare 429 is usually a burst rate limit, not quota exhaustion. Rotating
+        // on it makes the burst worse. Unless the type or message names a quota,
+        // rotate only when the active account's own usage agrees it is out.
+        const activeNow = accounts.find((account) => account.credentialID === activeID)
+        const typedQuota = /go-?limit|quota/i.test(`${event.error.type} ${event.error.message}`)
+        if (
+          event.error.status === 429 &&
+          !typedQuota &&
+          activeNow?.state === "available" &&
+          fullest(activeNow) < RATE_LIMIT_THRESHOLD
+        ) {
+          log(`429 at ${fullest(activeNow)}% looks like a rate limit, not quota; leaving the retry delay to OpenCode`)
           return
         }
-        // Every account has been tried and nothing can be measured: stop rotating
-        // and let OpenCode surface its own error instead of spinning.
-        log("no usage data and every account was tried in this turn; leaving the error to surface")
-        return
-      }
 
-      // All accounts were tried this turn. Waiting only helps when a blocking
-      // window actually resets; if usage still claims an account is available,
-      // that account already failed the provider, so surface the error instead
-      // of flipping credentials every few seconds.
-      const now = Date.now()
-      const reset = soonestReset(accounts, now)
-      if (reset === undefined || reset <= 0) {
-        log("every account was tried and no window reset is pending; leaving the error to surface")
-        return
-      }
+        const session = sessionTried(event.sessionID)
+        if (activeID) session.add(activeID)
 
-      const delay = waitDelay({
-        accounts,
-        nowMs: now,
-        retryAfterMs: event.error.retryAfterMs,
-        bufferMs: config.waitBufferMs,
-        maxWaitMs: config.maxWaitMs,
-      })
-      session.clear()
-      event.decision = { retry: true, delay }
-      log(`all accounts blocked, waiting ${Math.round(delay / 1000)}s for the next window`)
-      await notify(event.sessionID, `Every OpenCode Go account is out of quota; retrying in ${Math.round(delay / 1000)}s.`)
-    }
-  },
-})
+        const untried = accounts.filter((account) => !session.has(account.credentialID))
+        const candidate = await rotate(untried, activeID, session, "rotated after a limit error")
+        if (candidate) {
+          event.decision = { retry: true, delay: 0 }
+          await notify(event.sessionID, `OpenCode Go switched to ${sanitize(candidate.label)} after hitting a usage limit.`)
+          return
+        }
+
+        const measured = accounts.some((account) => account.state !== "unknown")
+        if (!measured) {
+          let next: Evaluated | undefined
+          for (const account of [...untried].sort(
+            (left, right) => orderIndex(config.credentialOrder, left) - orderIndex(config.credentialOrder, right),
+          )) {
+            try {
+              await activate(account, "rotated without usage data")
+              session.add(account.credentialID)
+              next = account
+              break
+            } catch (error) {
+              session.add(account.credentialID)
+              log(`activation failed for ${account.label}: ${describe(error)}`)
+            }
+          }
+          if (next) {
+            event.decision = { retry: true, delay: 0 }
+            return
+          }
+          log("no usage data and every account was tried in this turn; leaving the error to surface")
+          return
+        }
+
+        // All accounts were tried this turn. Waiting only helps when a blocking
+        // window actually resets, or the host asked for a specific backoff.
+        const now = Date.now()
+        const reset = soonestReset(accounts, now)
+        const retryAfterMs = event.error.retryAfterMs
+        const hasRetryAfter =
+          typeof retryAfterMs === "number" && Number.isFinite(retryAfterMs) && retryAfterMs > 0
+        if ((reset === undefined || reset <= 0) && !hasRetryAfter) {
+          log("every account was tried and no window reset is pending; leaving the error to surface")
+          return
+        }
+
+        const delay = waitDelay({
+          accounts,
+          nowMs: now,
+          retryAfterMs,
+          bufferMs: config.waitBufferMs,
+          maxWaitMs: config.maxWaitMs,
+        })
+        session.clear()
+        event.decision = { retry: true, delay }
+        log(`all accounts blocked, waiting ${Math.round(delay / 1000)}s for the next window`)
+        await notify(event.sessionID, `Every OpenCode Go account is out of quota; retrying in ${Math.round(delay / 1000)}s.`)
+      }
+    },
+  })
+}
+
+export const failover = createFailover()

@@ -79,6 +79,14 @@ describe("classifyLimitError", () => {
     expect(classifyLimitError({ type: "provider.free-limit", message: "free usage limit reached" })).toBe(false)
   })
 
+  it("treats 429 as a limit even for an invalid-request type", () => {
+    expect(classifyLimitError({ type: "provider.invalid-request", message: "", status: 429 })).toBe(true)
+  })
+
+  it("keeps budget limits out even at 429", () => {
+    expect(classifyLimitError({ type: "provider.budget-limit", message: "usage limit reached", status: 429 })).toBe(false)
+  })
+
   it("treats 402 as a quota failure even without a known type", () => {
     expect(classifyLimitError({ type: "provider.unknown", message: "", status: 402 })).toBe(true)
   })

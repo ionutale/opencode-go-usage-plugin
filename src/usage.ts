@@ -1,3 +1,6 @@
+export const USAGE_ENDPOINT = "https://opencode.ai/zen/go/v1/usage"
+export const USER_AGENT = "opencode-go-usage-plugin"
+
 export type UsageWindow = {
   status: string
   percent: number
@@ -18,6 +21,8 @@ export type UsageResult = {
   stale?: boolean
 }
 
+export type UsageErrorType = "no_credential" | "unauthorized" | "forbidden" | "upstream"
+
 export class UsageParseError extends Error {
   constructor(message: string) {
     super(message)
@@ -28,15 +33,14 @@ export class UsageParseError extends Error {
 export const GREEN = "#22c55e"
 export const YELLOW = "#eab308"
 export const RED = "#ef4444"
+export const NEUTRAL = "#6b7280"
 
-export const ERROR_TEXT: Record<string, string> = {
+export const ERROR_TEXT: Record<UsageErrorType, string> = {
   no_credential: "not connected",
   unauthorized: "check API key",
   forbidden: "Go plan required",
   upstream: "unreachable",
 }
-
-const WINDOW_KEYS = ["rolling", "weekly", "monthly"] as const
 
 function parseWindow(value: unknown, key: string): UsageWindow {
   if (typeof value !== "object" || value === null) throw new UsageParseError(`usage.${key} is not an object`)
@@ -56,9 +60,11 @@ export function parseUsageResponse(input: unknown): UsageWindows {
   const usage = (input as Record<string, unknown>).usage
   if (typeof usage !== "object" || usage === null) throw new UsageParseError("response.usage is missing")
   const record = usage as Record<string, unknown>
-  const result = {} as UsageWindows
-  for (const key of WINDOW_KEYS) result[key] = parseWindow(record[key], key)
-  return result
+  return {
+    rolling: parseWindow(record.rolling, "rolling"),
+    weekly: parseWindow(record.weekly, "weekly"),
+    monthly: parseWindow(record.monthly, "monthly"),
+  }
 }
 
 /** Remaining time as `Xd Yh`, `Xh Ym`, or `Xm`. Past or invalid values clamp to `0m`. */
@@ -87,18 +93,10 @@ export function barSegments(percent: number, width = 10): string {
 }
 
 export function usageColor(percent: number): string {
+  if (!Number.isFinite(percent)) return NEUTRAL
   if (percent >= 75) return RED
   if (percent >= 50) return YELLOW
   return GREEN
-}
-
-/** The same thresholds as `usageColor`, for surfaces that take a semantic tone instead of a color. */
-export type UsageTone = "success" | "warning" | "danger"
-
-export function usageTone(percent: number): UsageTone {
-  if (percent >= 75) return "danger"
-  if (percent >= 50) return "warning"
-  return "success"
 }
 
 /** Maps an RPC error to short UI text. Accepts unprefixed or `rpc.<id>.`-prefixed types. */
@@ -110,7 +108,7 @@ export function describeRpcError(error: unknown): string {
     typeof record?.type === "string" ? record.type : typeof data?.type === "string" ? data.type : undefined
   if (rawType) {
     const normalized = rawType.replace(/^rpc\.[^.]+\./, "")
-    const known = ERROR_TEXT[normalized]
+    const known = ERROR_TEXT[normalized as UsageErrorType]
     if (known) return known
   }
   if (error instanceof Error && error.message.length > 0) return error.message
@@ -121,9 +119,12 @@ export function describeRpcError(error: unknown): string {
 
 /** One aligned row per window, in the same shape the sidebar renders and the smoke script prints. */
 export function formatUsageRows(result: UsageResult, nowMs: number): string[] {
-  return WINDOW_KEYS.map((key) => {
-    const window = result.usage[key]
-    const label = `${key[0].toUpperCase()}${key.slice(1)}`
+  const rows: Array<[string, UsageWindow]> = [
+    ["Rolling", result.usage.rolling],
+    ["Weekly", result.usage.weekly],
+    ["Monthly", result.usage.monthly],
+  ]
+  return rows.map(([label, window]) => {
     const percent = String(Math.round(window.percent)).padStart(3)
     return `${label.padEnd(8)} ${barSegments(window.percent)}  ${percent}%  ${formatResetsIn(window.resetsAt, nowMs)}`
   })

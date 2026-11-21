@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
-import { createAccountStore, extractKey, type AccountContext } from "./accounts"
+import { extractKey } from "../accounts"
+import { createAccountStore, type AccountContext } from "./accounts"
 
 const CONNECTIONS = [
   { type: "credential", id: "cred_1", label: "Work", method: "key" },

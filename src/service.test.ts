@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { CACHE_TTL_MS, STALE_MAX_AGE_MS, UsageError, createUsageService } from "./service"
+import { CACHE_TTL_MS, MAX_BODY_BYTES, STALE_MAX_AGE_MS, UsageError, createUsageService } from "./service"
 
 const SAMPLE = {
   usage: {
@@ -56,6 +56,21 @@ describe("createUsageService", () => {
     const second = await service.get()
     expect(calls).toHaveLength(1)
     expect(second.fetchedAt).toBe(first.fetchedAt)
+  })
+
+  it("refetches when the active key changes", async () => {
+    let key = "key-a"
+    const { service, calls } = makeService(async () => key, [jsonResponse(SAMPLE), jsonResponse(SAMPLE)])
+    await service.get()
+    key = "key-b"
+    await service.get()
+    expect(calls).toHaveLength(2)
+  })
+
+  it("rejects an oversized response body", async () => {
+    const big = "x".repeat(MAX_BODY_BYTES + 1)
+    const { service } = makeService(async () => "test-key", [new Response(big, { status: 200 })])
+    await expect(service.get()).rejects.toMatchObject({ type: "upstream" })
   })
 
   it("refetches after the TTL", async () => {

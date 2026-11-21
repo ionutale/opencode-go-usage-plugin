@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import plugin, { extractKey } from "./index"
+import { extractKey } from "./accounts"
+import plugin from "./index"
 
 const SAMPLE = {
   usage: {

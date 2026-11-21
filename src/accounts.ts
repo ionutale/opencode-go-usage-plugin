@@ -29,7 +29,7 @@ export type AccountsContext = {
   }
 }
 
-type CredentialConnection = { id: string; label: string; connection: unknown }
+export type CredentialConnection = { id: string; label: string; connection: unknown }
 
 export type AccountsServiceOptions = {
   provider: string
@@ -117,6 +117,9 @@ export function createAccountsService(ctx: AccountsContext, options: AccountsSer
     async getAll(signal, options) {
       const fresh = options?.fresh === true
       const [active, credentials] = await Promise.all([activeID(), list()])
+      // Drop cache entries for credentials that no longer exist.
+      const ids = new Set(credentials.map((credential) => credential.id))
+      for (const key of cache.keys()) if (!ids.has(key)) cache.delete(key)
       // One account's failure must not hide the others.
       const accounts = await Promise.all(credentials.map((credential) => load(credential, active, signal, fresh)))
       return { accounts }

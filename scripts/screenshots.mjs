@@ -3,11 +3,13 @@
 import { chromium } from "@playwright/test"
 import { mkdirSync } from "node:fs"
 import { resolve } from "node:path"
+import { ringProgress } from "../src/rings.ts"
+import { usageColor } from "../src/usage.ts"
 
 const OUT = resolve("docs/screenshots")
 mkdirSync(OUT, { recursive: true })
 
-const color = (percent) => (percent >= 75 ? "#ef4444" : percent >= 50 ? "#eab308" : "#22c55e")
+const color = usageColor
 
 function rings(rolling, weekly, monthly, size = 30) {
   const center = size / 2
@@ -20,8 +22,7 @@ function rings(rolling, weekly, monthly, size = 30) {
   return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
     ${specs
       .map(({ percent, radius, color }) => {
-        const circumference = 2 * Math.PI * radius
-        const filled = (Math.min(100, Math.max(0, percent)) / 100) * circumference
+        const { circumference, filled } = ringProgress(percent, radius)
         return `<circle cx="${center}" cy="${center}" r="${radius}" fill="none" stroke="${color}" stroke-opacity="0.18" stroke-width="${stroke}"/>
         <circle cx="${center}" cy="${center}" r="${radius}" fill="none" stroke="${color}" stroke-width="${stroke}" stroke-linecap="round"
           stroke-dasharray="${filled} ${circumference - filled}" transform="rotate(-90 ${center} ${center})"/>`

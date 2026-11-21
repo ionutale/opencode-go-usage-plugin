@@ -1,6 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import { Plugin, usePlugin } from "@opencode/plugin/tui"
 import { Show, createSignal } from "solid-js"
+import { REFRESH_MS, REQUEST_TIMEOUT_MS, TICK_MS } from "./constants"
 import { GoUsage } from "./rpc"
 import {
   barSegments,
@@ -10,10 +11,6 @@ import {
   type UsageResult,
   type UsageWindow,
 } from "./usage"
-
-const REFRESH_MS = 600_000
-const TICK_MS = 30_000
-const REQUEST_TIMEOUT_MS = 15_000
 
 type ViewState =
   | { phase: "loading" }
@@ -26,14 +23,22 @@ export default Plugin.define({
     const rpc = context.client.rpc(GoUsage)
     const [state, setState] = createSignal<ViewState>({ phase: "loading" })
     const [now, setNow] = createSignal(Date.now())
+    const controller = new AbortController()
 
     const refresh = async () => {
       try {
         // JSON-Schema RPC output types as `unknown`; the server contract fixes the shape.
         const location = context.location ?? context.data.location.default()
-        const result = await rpc.get({}, { location, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
+        const result = await rpc.get(
+          {},
+          {
+            location,
+            signal: AbortSignal.any([controller.signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
+          },
+        )
         setState({ phase: "ok", result: result as UsageResult })
       } catch (error) {
+        if (controller.signal.aborted) return
         setState({ phase: "error", text: describeRpcError(error) })
       }
     }
@@ -48,6 +53,7 @@ export default Plugin.define({
     })
 
     return () => {
+      controller.abort()
       clearInterval(refreshTimer)
       clearInterval(tickTimer)
     }

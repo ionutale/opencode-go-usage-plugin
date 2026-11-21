@@ -19,8 +19,8 @@ credentials saved.
   `switched ahead of the limit (100% -> 5%)` followed by the chosen account's
   label, and the following request carried that account's key.
 - **Logging.** Decision lines land in `~/.local/share/opencode/go-failover.log`.
-- **Plugin install.** Loaded from `github:ionutale/opencode-go-failover`; the cache
-  is refreshed by deleting the cached package directory.
+- **Plugin install.** The failover half was verified as a separate package and now
+  ships inside `github:ionutale/opencode-go-usage-plugin`.
 
 ## Not verified live
 
@@ -34,7 +34,7 @@ credentials saved.
 
 ## Unit coverage
 
-`pnpm test` → 67 tests, `pnpm typecheck` clean. Covered: config parsing, usage
+`pnpm test` → 152 tests, `pnpm typecheck` clean. Covered: config parsing, usage
 parsing and caching, timeout, error classification (including context overflow),
 account evaluation, candidate choice with hysteresis, blocking-window reset math,
 timer clamping, credential store, both hooks, degraded-mode cap, notifications,

@@ -5,8 +5,6 @@ import { GoUsage } from "./rpc"
 import { UsageError, createUsageService } from "./service"
 import { ERROR_TEXT } from "./usage"
 
-export { extractKey }
-
 const PROVIDER = "opencode-go"
 
 export default Plugin.define({
@@ -32,8 +30,15 @@ export default Plugin.define({
           throw error
         }
       },
-      getAll: async (input, context) =>
-        accounts.getAll(context.signal, { fresh: (input as { fresh?: boolean } | undefined)?.fresh === true }),
+      getAll: async (input, context) => {
+        try {
+          return await accounts.getAll(context.signal, {
+            fresh: (input as { fresh?: boolean } | undefined)?.fresh === true,
+          })
+        } catch {
+          return context.error("upstream", ERROR_TEXT.upstream, { message: ERROR_TEXT.upstream })
+        }
+      },
     })
 
     // The failover half shares this plugin's options and hooks the same context.

@@ -7,7 +7,6 @@ import {
   formatUsageRows,
   parseUsageResponse,
   usageColor,
-  usageTone,
   UsageParseError,
 } from "./usage"
 
@@ -104,29 +103,12 @@ describe("usageColor", () => {
   ])("maps %d to %s", (percent, expected) => {
     expect(usageColor(percent)).toBe(expected)
   })
-})
 
-describe("usageTone", () => {
-  it.each([
-    [0, "success"],
-    [49, "success"],
-    [50, "warning"],
-    [74, "warning"],
-    [75, "danger"],
-    [100, "danger"],
-  ])("maps %d to %s", (percent, expected) => {
-    expect(usageTone(percent)).toBe(expected)
-  })
-
-  it("matches usageColor at every threshold", () => {
-    expect(usageTone(49)).toBe("success")
-    expect(usageColor(49)).toBe("#22c55e")
-    expect(usageTone(50)).toBe("warning")
-    expect(usageColor(50)).toBe("#eab308")
-    expect(usageTone(75)).toBe("danger")
-    expect(usageColor(75)).toBe("#ef4444")
+  it("uses a neutral color for a non-finite percent", () => {
+    expect(usageColor(Number.NaN)).toBe("#6b7280")
   })
 })
+
 
 describe("describeRpcError", () => {
   it("maps unprefixed error types", () => {
