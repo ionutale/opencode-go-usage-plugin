@@ -1,6 +1,6 @@
 {
   "name": "opencode-go-usage-plugin",
-  "version": "0.7.2",
+  "version": "0.7.3",
   "description": "OpenCode Go plan usage in the TUI and desktop, plus automatic account failover",
   "type": "module",
   "license": "MIT",

@@ -203,29 +203,33 @@ function UsageRings(props: { usage: () => UsageWindows | undefined; dim?: boolea
 }
 
 function UsageButton(props: { usage: () => UsageWindows | undefined; summary: () => string; onOpen: () => void }) {
+  const ctx = usePlugin()
+
   return (
-    <button
-      type="button"
-      data-testid="usage-rings"
-      onClick={props.onOpen}
-      title={props.summary()}
-      aria-label={props.summary()}
-      style={{
-        display: "flex",
-        "align-items": "center",
-        "justify-content": "center",
-        width: "26px",
-        height: "26px",
-        padding: "0",
-        border: "none",
-        "border-radius": "6px",
-        background: "transparent",
-        color: "inherit",
-        cursor: "pointer",
-      }}
-    >
-      <UsageRings usage={props.usage} dim={props.usage() === undefined} />
-    </button>
+    <ctx.ui.Tooltip value={<span>{props.summary()}</span>} placement="bottom">
+      <button
+        type="button"
+        data-testid="usage-rings"
+        onClick={props.onOpen}
+        title={props.summary()}
+        aria-label={props.summary()}
+        style={{
+          display: "flex",
+          "align-items": "center",
+          "justify-content": "center",
+          width: "26px",
+          height: "26px",
+          padding: "0",
+          border: "none",
+          "border-radius": "6px",
+          background: "transparent",
+          color: "inherit",
+          cursor: "pointer",
+        }}
+      >
+        <UsageRings usage={props.usage} dim={props.usage() === undefined} />
+      </button>
+    </ctx.ui.Tooltip>
   )
 }
 
