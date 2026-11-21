@@ -4,3 +4,9 @@ dist/*
 !dist/gui-experimental.cjs
 .DS_Store
 *.capture.txt
+.superpowers/
+*.log
+.env
+.env.*
+test-results/
+playwright-report/
