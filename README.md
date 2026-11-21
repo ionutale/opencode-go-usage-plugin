@@ -72,23 +72,20 @@ longer registers it.
 
 ## OpenCode Desktop
 
-Desktop has no terminal sidebar, so the plugin renders a composer pill instead.
-The pill shows all three windows at once:
+Desktop has no terminal sidebar, so the plugin puts a small activity ring control
+in the session header, beside **Toggle session context**, **Session details**, and
+**Toggle review**:
 
-```text
-(status icon) Rolling 2% · Weekly 18% · Monthly 9%
-```
-
-Pick the pill to see one row per window, each with its own status icon and the
-countdown to its reset. Colors follow the same thresholds: green < 50%, yellow
-50–74%, red ≥ 75%. The highest window also colors the pill's own icon.
-
-- The pill appears while a session is open, not on Home.
-- It refreshes every 30 seconds; the countdowns tick every 30 seconds.
-- If the API is unreachable, the last good values stay, and the menu title says
-  `(cached)` for up to 5 minutes.
-- Errors read `Go usage: not connected`, `Go usage: check API key`,
-  `Go usage: Go plan required`, or `Go usage: unreachable`, same as the sidebar.
+- Three concentric rings — rolling (red), weekly (green), monthly (blue) — fill
+  with the active credential's percentages.
+- Hovering shows the three numbers; clicking opens **OpenCode Go usage**, a list
+  of every Go credential you have saved.
+- Each credential in the list shows its own three windows with the countdown to
+  each reset, an **Active** badge, and its own error (`not connected`,
+  `check API key`, `Go plan required`, `unreachable`) when a read fails. One bad
+  key never hides the others.
+- The list refreshes every 30 seconds; countdowns tick every 30 seconds. Cached
+  values are marked `cached` for up to 5 minutes.
 
 The desktop half is the `./gui-experimental` part, so it needs the plugin in your
 global `opencode.json(c)`; the desktop app does not read `cli.json`. The GUI API
@@ -98,7 +95,7 @@ is experimental upstream and may change between OpenCode releases.
 
 ```text
 TUI (sidebar slot)      ──RPC──▶ server plugin ──HTTPS──▶ opencode.ai /zen/go/v1/usage
-Desktop (composer pill) ──RPC──┘
+Desktop (header rings) ──RPC──┘
 ```
 
 - The **server plugin** resolves your Go credential through OpenCode's
@@ -107,7 +104,8 @@ Desktop (composer pill) ──RPC──┘
 - The **TUI plugin** calls the typed RPC method `get` (id `go-usage`) every 30
   seconds and renders `sidebar.footer`. It never sees your key.
 - The **desktop GUI plugin** calls the same RPC on the desktop app's own server
-  and renders the composer pill. It never sees your key either.
+  and renders the header rings and the all-credentials list. It never sees your
+  key either.
 - Because the fetch happens server-side, both widgets also work when your CLI is
   connected to a remote server.
 
