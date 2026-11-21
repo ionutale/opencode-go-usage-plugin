@@ -47,7 +47,7 @@ export default Plugin.define({
       "dialog.empty": "No OpenCode Go credentials found",
       "dialog.noUsage": "Usage unavailable",
       "dialog.stale": "cached",
-      "dialog.row": "{{percent}}% · resets in {{time}}",
+      "dialog.reset": "resets in {{time}}",
       "row.rolling": "Rolling",
       "row.weekly": "Weekly",
       "row.monthly": "Monthly",
@@ -325,10 +325,13 @@ function AccountCard(props: { account: AccountUsage; now: () => number }) {
                 >
                   <span style={{ opacity: 0.65 }}>{ctx.t(labelKey)}</span>
                   <span>
-                    {ctx.t("dialog.row", {
-                      percent: Math.round(window().percent),
-                      time: formatResetsIn(window().resetsAt, props.now()),
-                    })}
+                    <span style={{ color: usageColor(window().percent), "font-weight": 600 }}>
+                      {Math.round(window().percent)}%
+                    </span>
+                    <span style={{ opacity: 0.65 }}>
+                      {" · "}
+                      {ctx.t("dialog.reset", { time: formatResetsIn(window().resetsAt, props.now()) })}
+                    </span>
                   </span>
                 </div>
               )

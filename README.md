@@ -83,8 +83,9 @@ in the session header, first in the row that holds **Toggle session context**,
   of every Go credential you have saved.
 - Each credential in the list shows its own three windows with the countdown to
   each reset, an **Active** badge, and its own error (`not connected`,
-  `check API key`, `Go plan required`, `unreachable`) when a read fails. One bad
-  key never hides the others.
+  `check API key`, `Go plan required`, `unreachable`) when a read fails. Every
+  percentage is colored by its own usage with the same thresholds; one bad key
+  never hides the others.
 - The list refreshes every 30 seconds; countdowns tick every 30 seconds. Cached
   values are marked `cached` for up to 5 minutes.
 
