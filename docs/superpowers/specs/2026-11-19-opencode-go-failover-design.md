@@ -21,9 +21,10 @@ account can serve it until a window reopens.
 - **G1 Reactive failover.** When an `opencode-go` request fails with a limit
   error, activate the next Go credential that still has headroom and retry the
   same request inside the same turn.
-- **G2 Proactive switching.** Before an account gets blocked, switch away from
-  it once a usage window crosses a configurable threshold (default 90%), so
-  turns rarely fail at all.
+- **G2 Proactive switching.** Before a turn and every 10 minutes, activate the
+  earliest-renewing eligible account. Monthly usage drains to the configurable
+  threshold (default 100%); weekly and rolling windows have no floor by default,
+  so a short-window block is recovered by G1.
 - **G3 Hold when everything is blocked.** When all accounts are blocked, keep
   the turn waiting until the soonest window reset, then continue.
 - **G4 Zero-friction install.** Works with the existing credentials; the only
@@ -126,19 +127,24 @@ Evaluated at each turn boundary, in the hook that admits a user prompt
 minutes) by a background timer. The timer is unref'd and cleared by the plugin's
 cleanup:
 
-1. Refresh usage for all accounts (cache `usageCacheMs`; a cached read is
-   acceptable here because the reactive path is the authoritative one).
+1. Refresh usage for all accounts. Prompt admission may reuse the cache
+   (`usageCacheMs`); the timer bypasses it and fetches fresh.
 2. Leave everything alone when `proactiveThreshold` is 0 or when only one
    account exists.
-3. Otherwise pick the earliest-renewing `available` account whose monthly usage
-   is below `proactiveThreshold` (default 90) and whose headroom across every
-   window is at least `minHeadroom` (default 10). Include the active account in
-   that comparison; if it is the best eligible account, there is nothing to do.
-4. Activate the selected account when it is not the active. Do not require a
-   headroom gain: a sooner-renewing account with less headroom must win. A
-   temporary weekly or rolling block bridges to the next eligible account; the
-   next evaluation re-selects the earliest account after its window resets. Log
-   the switch with the monthly percentage and the renewal countdown.
+3. An account is eligible while its monthly renewal is in the future, no window
+   is at 100% or non-`ok`, its monthly usage is below `proactiveThreshold`
+   (default 100), and its headroom is at least `minHeadroom` (default 0). A past
+   monthly renewal is an expired subscription and is skipped; a blocked window
+   is exhausted and is skipped until it resets.
+4. Sort the eligible accounts by monthly renewal, then weekly reset, then
+   rolling reset, then `credentialOrder`, then greater headroom. Include the
+   active account; if it is first, there is nothing to do. Otherwise activate
+   the first account.
+5. There is no short-window floor by default: the active account is used until
+   any window hits 100%, then the next eligible account takes over. A weekly or
+   rolling hit can error the current turn; the reactive path rotates and retries.
+   Set `minHeadroom` above 0 to bridge before the block instead. Log the switch
+   with the monthly percentage and the renewal countdown.
 
 Prompt admission remains the primary checkpoint: it runs before a new turn starts
 and cannot disturb a turn that is already streaming. The background timer keeps
@@ -164,8 +170,9 @@ OpenCode classifies a failure and before a retry is scheduled. The handler:
    messages such as context length, output tokens, and payload size. Anything
    else returns without touching `decision`.
 2. Refreshes usage (bypassing the cache; this is the authoritative signal).
-3. If an `available` account exists, activates the one whose `renewalAt` is
-   earliest (headroom then preference order break ties), sets
+3. If an eligible account exists, activates the first in the same timestamp
+   order as the proactive path (monthly, weekly, rolling, `credentialOrder`,
+   headroom; expired accounts excluded), sets
    `decision = { retry: true, delay: 0 }`, logs `rotated <from> -> <to> (<pct>
    -> <pct>)`, and returns.
 4. If nobody is available, computes the soonest `resetsAt` across all windows of
@@ -201,11 +208,11 @@ usage endpoint, and log path are fixed and no longer configurable:
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `credentialOrder` | `[]` | Preferred order, by label or credential ID; used only for ties |
-| `proactiveThreshold` | `90` | Drain each account's monthly quota to this percentage before moving to the next; `0` disables proactive switching |
-| `minHeadroom` | `10` | Do not switch into an account with less than this much headroom across any window |
-| `evaluateIntervalMs` | `600000` | Re-evaluate the renewal queue in the background this often; `0` evaluates only at prompt admission |
-| `usageCacheMs` | `10000` | Cache lifetime for usage reads |
+| `credentialOrder` | `[]` | Preferred order, by label or credential ID; breaks ties after the three timestamps |
+| `proactiveThreshold` | `100` | Monthly drain threshold; `100` uses the account until the monthly window is exhausted; `0` disables proactive switching |
+| `minHeadroom` | `0` | Optional floor across all windows; `0` uses the account until a window hits 100% |
+| `evaluateIntervalMs` | `600000` | Fetch fresh usage and re-evaluate every 10 minutes; `0` evaluates only at prompt admission |
+| `usageCacheMs` | `10000` | Cache lifetime for prompt-admission usage reads |
 | `waitBufferMs` | `5000` | Added to a window reset before retrying |
 | `notify` | `false` | Post a synthetic session message on switch or long wait |
 | `maxWaitMs` | `300000` | Maximum wait before the error is handed back to OpenCode |
@@ -245,9 +252,10 @@ usage endpoint, and log path are fixed and no longer configurable:
 ## Verification
 
 1. **Unit tests** (vitest) over pure policy functions: error classification,
-   availability, headroom, candidate choice by renewal and headroom floor,
-   preference order, soonest-reset computation, wait clamp, periodic evaluation
-   (cadence, disable, cleanup).
+   availability, headroom, candidate order by monthly/weekly/rolling timestamps
+   and credentialOrder, expired monthly renewals, no-floor block/recovery,
+   soonest-reset computation, wait clamp, periodic evaluation (cadence, fresh
+   fetch, disable, cleanup).
 2. **Credential enumeration.** Confirm `integration.get` lists all three Go
    credentials and that `connection.resolve` returns a key for an *inactive*
    one. This decides whether the plugin runs in full mode or degraded mode, so

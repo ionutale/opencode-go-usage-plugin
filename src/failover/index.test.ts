@@ -338,6 +338,23 @@ describe("failure isolation", () => {
     expect(fake.activated).toEqual(["cred_2"])
   })
 
+  it("switches to a known account when the active account's usage cannot be read", async () => {
+    const usage = {
+      cred_1: usagePayload(20, { monthlyResetMs: 72 * HOUR }),
+      cred_2: usagePayload(10, { monthlyResetMs: 24 * HOUR }),
+      cred_3: usagePayload(5, { monthlyResetMs: 100 * HOUR }),
+    }
+    const fake = fakeContext({ usage, active: "cred_1", options: { proactiveThreshold: 100 } })
+    vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => {
+      const key = (init?.headers as Record<string, string>).Authorization.replace("Bearer ", "")
+      if (key === "cred_1") throw new Error("401 from one account")
+      return new Response(JSON.stringify(usage[key as keyof typeof usage]), { status: 200 })
+    })
+    await (failover as unknown as { setup: (ctx: unknown) => Promise<void> | void }).setup(fake.ctx)
+    await fake.hook("prompt")!({ sessionID: "ses_1" })
+    expect(fake.activated).toEqual(["cred_2"])
+  })
+
   it("does nothing when only one credential is saved", async () => {
     const fake = await setup({
       usage: { cred_1: usagePayload(40) },
@@ -471,7 +488,7 @@ describe("proactive switching", () => {
     expect(fake.activated).toEqual(["cred_1"])
   })
 
-  it("does not switch into an account whose weekly window leaves less than the headroom floor", async () => {
+  it("honors a configured headroom floor", async () => {
     const fake = await setup({
       usage: {
         cred_1: usagePayload(20, { weekly: 93, monthly: 20, monthlyResetMs: 24 * HOUR }),
@@ -479,10 +496,48 @@ describe("proactive switching", () => {
         cred_3: usagePayload(7, { monthlyResetMs: 100 * HOUR }),
       },
       active: "cred_2",
-      options: { proactiveThreshold: 90 },
+      options: { proactiveThreshold: 90, minHeadroom: 10 },
     })
     await fake.hook("prompt")!({ sessionID: "ses_1" })
     expect(fake.activated).toEqual([])
+  })
+
+  it("uses the earliest account even when its weekly window is near the limit", async () => {
+    const fake = await setup({
+      usage: {
+        cred_1: usagePayload(20, { weekly: 93, monthly: 20, monthlyResetMs: 24 * HOUR }),
+        cred_2: usagePayload(12, { monthlyResetMs: 48 * HOUR }),
+        cred_3: usagePayload(7, { monthlyResetMs: 100 * HOUR }),
+      },
+      active: "cred_2",
+      options: { proactiveThreshold: 100 },
+    })
+    await fake.hook("prompt")!({ sessionID: "ses_1" })
+    expect(fake.activated).toEqual(["cred_1"])
+  })
+
+  it("uses the earliest account until a short window blocks, then moves on", async () => {
+    const usage = {
+      cred_1: usagePayload(20, { weekly: 93, monthly: 20, monthlyResetMs: 24 * HOUR }),
+      cred_2: usagePayload(12, { monthlyResetMs: 48 * HOUR }),
+      cred_3: usagePayload(7, { monthlyResetMs: 100 * HOUR }),
+    }
+    const fake = await setup({
+      usage,
+      active: "cred_2",
+      options: { proactiveThreshold: 100, usageCacheMs: 0 },
+    })
+
+    await fake.hook("prompt")!({ sessionID: "ses_1" })
+    expect(fake.activated).toEqual(["cred_1"])
+
+    usage.cred_1 = usagePayload(20, { weekly: 100, monthly: 20, monthlyResetMs: 24 * HOUR })
+    await fake.hook("prompt")!({ sessionID: "ses_1" })
+    expect(fake.activated).toEqual(["cred_1", "cred_2"])
+
+    usage.cred_1 = usagePayload(20, { weekly: 0, monthly: 20, monthlyResetMs: 24 * HOUR })
+    await fake.hook("prompt")!({ sessionID: "ses_1" })
+    expect(fake.activated).toEqual(["cred_1", "cred_2", "cred_1"])
   })
 
   it("returns to the earliest-renewing account when its weekly window resets", async () => {
@@ -494,7 +549,7 @@ describe("proactive switching", () => {
     const fake = await setup({
       usage,
       active: "cred_2",
-      options: { proactiveThreshold: 90, usageCacheMs: 0 },
+      options: { proactiveThreshold: 90, minHeadroom: 10, usageCacheMs: 0 },
     })
     await fake.hook("prompt")!({ sessionID: "ses_1" })
     expect(fake.activated).toEqual([])
@@ -570,5 +625,25 @@ describe("periodic evaluation", () => {
     await fake.cleanup()
     await vi.advanceTimersByTimeAsync(600_000)
     expect(fake.activated).toEqual([])
+  })
+
+  it("fetches fresh usage on the periodic evaluation", async () => {
+    vi.useFakeTimers()
+    const usage = {
+      cred_1: usagePayload(20, { monthlyResetMs: 24 * HOUR }),
+      cred_2: usagePayload(10, { monthlyResetMs: 48 * HOUR }),
+      cred_3: usagePayload(5, { monthlyResetMs: 100 * HOUR }),
+    }
+    const fake = await setup({
+      usage,
+      options: { proactiveThreshold: 100, evaluateIntervalMs: 600_000, usageCacheMs: 600_000 },
+    })
+
+    await fake.hook("prompt")!({ sessionID: "ses_1" })
+    expect(fake.activated).toEqual([])
+
+    usage.cred_2 = usagePayload(10, { monthlyResetMs: 12 * HOUR })
+    await vi.advanceTimersByTimeAsync(600_000)
+    expect(fake.activated).toEqual(["cred_2"])
   })
 })

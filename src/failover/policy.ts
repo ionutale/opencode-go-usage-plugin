@@ -8,6 +8,10 @@ export type Evaluated = Account & {
   headroom: number
   /** When the plan renews (the monthly window's `resetsAt`), in ms. Undefined when it cannot be parsed. */
   renewalAt: number | undefined
+  /** The next weekly reset, in ms. */
+  weeklyAt: number | undefined
+  /** The next rolling reset, in ms. */
+  rollingAt: number | undefined
 }
 
 export const TIMER_MAX_MS = 2_147_483_647
@@ -50,12 +54,32 @@ export function classifyLimitError(error: { type: string; message: string; statu
 }
 
 export function evaluate(account: Account, usage: UsageWindows | undefined): Evaluated {
-  if (!usage) return { ...account, usage, state: "unknown", headroom: 0, renewalAt: undefined }
+  if (!usage) {
+    return {
+      ...account,
+      usage,
+      state: "unknown",
+      headroom: 0,
+      renewalAt: undefined,
+      weeklyAt: undefined,
+      rollingAt: undefined,
+    }
+  }
   const windows = [usage.rolling, usage.weekly, usage.monthly]
   const blocked = windows.some((window) => window.status !== "ok" || window.percent >= 100)
   const headroom = Math.max(0, Math.min(...windows.map((window) => 100 - window.percent)))
   const renewal = Date.parse(usage.monthly.resetsAt)
-  return { ...account, usage, state: blocked ? "blocked" : "available", headroom, renewalAt: Number.isFinite(renewal) ? renewal : undefined }
+  const weekly = Date.parse(usage.weekly.resetsAt)
+  const rolling = Date.parse(usage.rolling.resetsAt)
+  return {
+    ...account,
+    usage,
+    state: blocked ? "blocked" : "available",
+    headroom,
+    renewalAt: Number.isFinite(renewal) ? renewal : undefined,
+    weeklyAt: Number.isFinite(weekly) ? weekly : undefined,
+    rollingAt: Number.isFinite(rolling) ? rolling : undefined,
+  }
 }
 
 export function orderIndex(order: readonly string[], account: Account): number {
@@ -67,30 +91,44 @@ export function chooseCandidate(input: {
   accounts: readonly Evaluated[]
   activeID: string | undefined
   order: readonly string[]
-  /** Minimum headroom across every window an account must have to be selected. */
+  /** Minimum headroom across every window; 0 disables the floor. */
   minHeadroom: number
   /** When set, only accounts whose monthly usage is below this percentage are eligible. */
   monthlyUnder?: number
+  /** Current time; a monthly renewal at or before this is expired. */
+  nowMs: number
 }): Evaluated | undefined {
-  // The plan renewal decides the order: the account whose monthly window
-  // renews soonest is the one whose quota would otherwise be wasted. An
-  // account stays eligible until its monthly usage reaches the drain
-  // threshold and while it still has the minimum headroom. There is no
-  // headroom-gain gate: a sooner-renewing account with less headroom wins.
-  const renewalRank = (account: Evaluated) => account.renewalAt ?? Number.POSITIVE_INFINITY
+  // Monthly renewal is the hard deadline, so it sorts first. Weekly and
+  // rolling resets only break ties; they do not expire a subscription. A past
+  // monthly reset is expired and skipped. The default has no short-window
+  // floor: use the account until a window hits 100%, then let the reactive
+  // path recover the block.
   const monthly = (account: Evaluated) => account.usage?.monthly.percent ?? 100
+  const rank = (account: Evaluated) => account.renewalAt ?? Number.POSITIVE_INFINITY
 
   return input.accounts
     .filter((account) => account.state === "available" && account.credentialID !== input.activeID)
+    .filter((account) => rank(account) > input.nowMs)
     .filter((account) => account.headroom >= input.minHeadroom)
     .filter((account) => input.monthlyUnder === undefined || monthly(account) < input.monthlyUnder)
     .sort((left, right) => {
-      const leftRenewal = renewalRank(left)
-      const rightRenewal = renewalRank(right)
-      if (leftRenewal !== rightRenewal) return leftRenewal < rightRenewal ? -1 : 1
-      if (right.headroom !== left.headroom) return right.headroom - left.headroom
-      return orderIndex(input.order, left) - orderIndex(input.order, right)
+      const byMonthly = compareTime(left.renewalAt, right.renewalAt)
+      if (byMonthly !== 0) return byMonthly
+      const byWeekly = compareTime(left.weeklyAt, right.weeklyAt)
+      if (byWeekly !== 0) return byWeekly
+      const byRolling = compareTime(left.rollingAt, right.rollingAt)
+      if (byRolling !== 0) return byRolling
+      const byOrder = orderIndex(input.order, left) - orderIndex(input.order, right)
+      if (byOrder !== 0) return byOrder
+      return right.headroom - left.headroom
     })[0]
+}
+
+function compareTime(left: number | undefined, right: number | undefined): number {
+  const leftRank = left ?? Number.POSITIVE_INFINITY
+  const rightRank = right ?? Number.POSITIVE_INFINITY
+  if (leftRank === rightRank) return 0
+  return leftRank < rightRank ? -1 : 1
 }
 
 function blocking(window: { status: string; percent: number }): boolean {
@@ -106,6 +144,9 @@ export function soonestReset(accounts: readonly Evaluated[], nowMs: number): num
   let soonest: number | undefined
   for (const account of accounts) {
     if (!account.usage) continue
+    // An expired subscription has no future share; waiting for its short
+    // windows cannot make the monthly quota come back.
+    if (account.renewalAt !== undefined && account.renewalAt <= nowMs) continue
     if (account.state === "available") return 0
 
     const windows = [account.usage.rolling, account.usage.weekly, account.usage.monthly].filter(blocking)

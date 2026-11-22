@@ -98,25 +98,27 @@ is experimental upstream and may change between OpenCode releases.
 
 ## Automatic failover
 
-**Before a turn** (prompt admission, never mid-turn): the plugin orders the Go
-accounts by their monthly renewal and selects the earliest-renewing account that
-is still below `proactiveThreshold` and has at least `minHeadroom` left across
-its rolling, weekly, and monthly windows. If that is not the active account, it
-switches. This spends capacity that would otherwise expire unused first; a
-temporary weekly or rolling block only bridges to the next account, and the
-earliest-renewing account returns once its window resets. There is no
-headroom-gain gate, so a sooner-renewing account with less headroom still wins;
-greater headroom only breaks a tie between accounts with the same renewal.
-The prompt hook skips sessions running on another provider.
+**Before a turn and every `evaluateIntervalMs`** (10 minutes by default):
+the plugin fetches usage for every Go account and orders the eligible ones by
+monthly renewal, then weekly reset, then rolling reset, then `credentialOrder`,
+then greater headroom. An account is eligible while its monthly renewal is in
+the future, no window is at 100%, and its monthly usage is below
+`proactiveThreshold`. A past monthly renewal is an **expired** subscription and
+is skipped; a 100% window is **exhausted** and is skipped until it resets. If
+the first eligible account is not active, the plugin switches. The prompt hook
+skips sessions on another provider; the background timer keeps the global
+credential aligned.
 
-The same selection runs every `evaluateIntervalMs` (10 minutes by default), so a
-window reset or a changed renewal order is picked up without waiting for a
-prompt. Set it to `0` to evaluate only on prompt admission.
+There is no short-window floor by default (`minHeadroom: 0`): the active account
+is used until any rolling, weekly, or monthly window hits 100%. A weekly or
+rolling hit can error the current turn; the reactive path rotates and retries on
+the next account. After the window resets, the earliest-renewing account
+returns. Set `minHeadroom` above 0 to bridge before the block instead.
 
 **After a limit error** (a Go limit, 429/402, or a limit-shaped message): the
-plugin re-reads usage, activates the available account whose plan renews soonest,
-and asks OpenCode to retry the same request immediately. Each account is tried at
-most once per turn.
+plugin re-reads usage, activates the next eligible account in the same
+timestamp order, and asks OpenCode to retry the same request immediately. Each
+account is tried at most once per turn.
 
 A bare `429` is treated as a **rate limit**, not quota exhaustion: if the active
 account's usage still shows headroom, the plugin leaves the retry delay to
@@ -134,7 +136,6 @@ pending, the error surfaces instead of a buffer-only retry.
 
 - Switch on an error that is not a usage or Go limit (a 400, an aborted turn, a
   tool failure).
-- Switch in the middle of a running turn.
 - Throw an error into OpenCode: every failure inside a hook is caught and logged.
 - Rotate more than once per account per turn.
 - Touch any provider other than `opencode-go`.
@@ -146,11 +147,13 @@ pending, the error surfaces instead of a buffer-only retry.
 - If a credential's key cannot be read, that account is treated as unmeasured and
   the plugin rotates blind on a limit error, then re-checks.
 - Usage percentages are coarse; the decisions are only as precise as they are.
+- There is no short-window floor by default. A weekly or rolling window can hit
+  100% mid-turn; the active account then blocks, the turn errors, and the
+  reactive path rotates. Set `minHeadroom` above 0 to bridge before the block.
 - The queue drains in monthly-renewal order and does not keep a reserve. If your
   total demand is below total capacity, some quota must go unused; the policy
-  puts the unavoidable remainder on the latest-renewing account. Raise
-  `minHeadroom` to keep a larger safety buffer, or lower it to squeeze the last
-  points.
+  puts the unavoidable remainder on the latest-renewing account. Set
+  `proactiveThreshold` below 100 or `minHeadroom` above 0 to stop earlier.
 - The 10-minute evaluation can change the global credential while a long turn is
   running. The in-flight request keeps its key, but the next model call in that
   turn may use the new account. Set `evaluateIntervalMs` to `0` to evaluate only
@@ -170,8 +173,8 @@ pending, the error surfaces instead of a buffer-only retry.
     {
       "package": "github:ionutale/opencode-go-usage-plugin",
       "options": {
-        "proactiveThreshold": 90,
-        "minHeadroom": 10,
+        "proactiveThreshold": 100,
+        "minHeadroom": 0,
         "evaluateIntervalMs": 600000,
         "credentialOrder": ["Work", "Personal"],
       },
@@ -182,11 +185,11 @@ pending, the error surfaces instead of a buffer-only retry.
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `credentialOrder` | `[]` | Preferred order, by label or credential ID; used only for ties |
-| `proactiveThreshold` | `90` | Drain each account's monthly quota to this percentage before moving to the next; `0` disables proactive switching |
-| `minHeadroom` | `10` | Do not switch into an account with less than this much headroom across any window |
-| `evaluateIntervalMs` | `600000` | Re-evaluate the renewal queue in the background this often; `0` evaluates only at prompt admission |
-| `usageCacheMs` | `10000` | Failover's own usage cache lifetime |
+| `credentialOrder` | `[]` | Preferred order, by label or credential ID; breaks ties after the three timestamps |
+| `proactiveThreshold` | `100` | Monthly drain threshold; `100` uses the account until the monthly window is exhausted; `0` disables proactive switching |
+| `minHeadroom` | `0` | Optional floor across all windows; `0` uses the account until a window hits 100% |
+| `evaluateIntervalMs` | `600000` | Fetch fresh usage and re-evaluate every 10 minutes; `0` evaluates only at prompt admission |
+| `usageCacheMs` | `10000` | Failover's own usage cache lifetime; the 10-minute timer bypasses it |
 | `waitBufferMs` | `5000` | Added to a window reset before retrying |
 | `maxWaitMs` | `300000` | Maximum wait before the error is handed back to OpenCode (five minutes) |
 | `notify` | `false` | Post a short session message when the plugin switches or waits |
@@ -265,7 +268,7 @@ when both plugins are installed.
 pnpm install
 pnpm build:tui   # rebuild dist/tui.js after editing src/tui.tsx
 pnpm build:gui   # rebuild dist/gui-experimental.cjs after editing src/gui.tsx
-pnpm test        # 163 unit tests, including the failover half
+pnpm test        # 174 unit tests, including the failover half
 pnpm typecheck   # tsc --noEmit
 pnpm screenshots # regenerate the README previews in docs/screenshots
 pnpm smoke       # live call; needs a local Go key (/connect or OPENCODE_API_KEY)

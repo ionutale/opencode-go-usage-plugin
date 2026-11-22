@@ -38,10 +38,20 @@ function windowsAt(input: {
   weekly: number
   monthly: number
   monthlyResetInMs: number
+  weeklyResetInMs?: number
+  rollingResetInMs?: number
 }): UsageWindows {
   return {
-    rolling: { status: "ok", percent: input.rolling, resetsAt: new Date(NOW + HOUR).toISOString() },
-    weekly: { status: "ok", percent: input.weekly, resetsAt: new Date(NOW + 2 * HOUR).toISOString() },
+    rolling: {
+      status: "ok",
+      percent: input.rolling,
+      resetsAt: new Date(NOW + (input.rollingResetInMs ?? HOUR)).toISOString(),
+    },
+    weekly: {
+      status: "ok",
+      percent: input.weekly,
+      resetsAt: new Date(NOW + (input.weeklyResetInMs ?? 2 * HOUR)).toISOString(),
+    },
     monthly: {
       status: "ok",
       percent: input.monthly,
@@ -117,9 +127,11 @@ describe("evaluate", () => {
     expect(result.headroom).toBe(23)
   })
 
-  it("records the monthly renewal", () => {
+  it("records the monthly renewal, weekly reset, and rolling reset", () => {
     const result = evaluate(account("a"), usage(40, 77, 64))
     expect(result.renewalAt).toBe(NOW + 72 * HOUR)
+    expect(result.weeklyAt).toBe(NOW + 2 * HOUR)
+    expect(result.rollingAt).toBe(NOW + HOUR)
   })
 
   it("is blocked when a window percent is 100", () => {
@@ -134,11 +146,16 @@ describe("evaluate", () => {
     const result = evaluate(account("a"), undefined)
     expect(result.state).toBe("unknown")
     expect(result.headroom).toBe(0)
+    expect(result.renewalAt).toBeUndefined()
+    expect(result.weeklyAt).toBeUndefined()
+    expect(result.rollingAt).toBeUndefined()
   })
 })
 
 describe("chooseCandidate", () => {
   const evaluated = (id: string) => evaluate(account(id), usage(40, 30, 20))
+  const choose = (input: Omit<Parameters<typeof chooseCandidate>[0], "nowMs">) =>
+    chooseCandidate({ ...input, nowMs: NOW })
 
   it("picks the account whose plan renews soonest, not the one with the most headroom", () => {
     const accounts = [
@@ -146,7 +163,7 @@ describe("chooseCandidate", () => {
       evaluate(account("roomy"), atReset(20, 72 * HOUR)),
       evaluate(account("soon"), atReset(60, 2 * HOUR)),
     ]
-    const chosen = chooseCandidate({ accounts, activeID: "active", order: [], minHeadroom: 0 })
+    const chosen = choose({ accounts, activeID: "active", order: [], minHeadroom: 0 })
     expect(chosen?.credentialID).toBe("soon")
   })
 
@@ -155,7 +172,7 @@ describe("chooseCandidate", () => {
       evaluate(account("active"), atReset(20, 72 * HOUR)),
       evaluate(account("soon"), atReset(60, 2 * HOUR)),
     ]
-    const chosen = chooseCandidate({ accounts, activeID: "active", order: [], minHeadroom: 0 })
+    const chosen = choose({ accounts, activeID: "active", order: [], minHeadroom: 0 })
     expect(chosen?.credentialID).toBe("soon")
   })
 
@@ -165,7 +182,7 @@ describe("chooseCandidate", () => {
       evaluate(account("soon"), atReset(95, HOUR)),
       evaluate(account("next"), atReset(50, 24 * HOUR)),
     ]
-    const chosen = chooseCandidate({ accounts, activeID: "active", order: [], minHeadroom: 10 })
+    const chosen = choose({ accounts, activeID: "active", order: [], minHeadroom: 10 })
     expect(chosen?.credentialID).toBe("next")
   })
 
@@ -175,7 +192,7 @@ describe("chooseCandidate", () => {
       evaluate(account("atThreshold"), windowsAt({ rolling: 5, weekly: 5, monthly: 90, monthlyResetInMs: HOUR })),
       evaluate(account("next"), windowsAt({ rolling: 5, weekly: 5, monthly: 50, monthlyResetInMs: 24 * HOUR })),
     ]
-    const chosen = chooseCandidate({
+    const chosen = choose({
       accounts,
       activeID: "active",
       order: [],
@@ -190,7 +207,7 @@ describe("chooseCandidate", () => {
       evaluate(account("active"), windowsAt({ rolling: 5, weekly: 5, monthly: 20, monthlyResetInMs: HOUR })),
       evaluate(account("other"), windowsAt({ rolling: 5, weekly: 5, monthly: 10, monthlyResetInMs: 48 * HOUR })),
     ]
-    const chosen = chooseCandidate({
+    const chosen = choose({
       accounts,
       activeID: undefined,
       order: [],
@@ -200,19 +217,118 @@ describe("chooseCandidate", () => {
     expect(chosen?.credentialID).toBe("active")
   })
 
+  it("uses the weekly reset to break a monthly tie", () => {
+    const accounts = [
+      evaluate(
+        account("laterWeekly"),
+        windowsAt({
+          rolling: 5,
+          weekly: 20,
+          monthly: 20,
+          monthlyResetInMs: 72 * HOUR,
+          weeklyResetInMs: 3 * HOUR,
+        }),
+      ),
+      evaluate(
+        account("soonWeekly"),
+        windowsAt({
+          rolling: 5,
+          weekly: 20,
+          monthly: 20,
+          monthlyResetInMs: 72 * HOUR,
+          weeklyResetInMs: HOUR,
+        }),
+      ),
+    ]
+    const chosen = choose({ accounts, activeID: undefined, order: [], minHeadroom: 0 })
+    expect(chosen?.credentialID).toBe("soonWeekly")
+  })
+
+  it("uses the rolling reset to break a monthly and weekly tie", () => {
+    const accounts = [
+      evaluate(
+        account("laterRolling"),
+        windowsAt({
+          rolling: 5,
+          weekly: 20,
+          monthly: 20,
+          monthlyResetInMs: 72 * HOUR,
+          weeklyResetInMs: 2 * HOUR,
+          rollingResetInMs: 3 * HOUR,
+        }),
+      ),
+      evaluate(
+        account("soonRolling"),
+        windowsAt({
+          rolling: 5,
+          weekly: 20,
+          monthly: 20,
+          monthlyResetInMs: 72 * HOUR,
+          weeklyResetInMs: 2 * HOUR,
+          rollingResetInMs: HOUR,
+        }),
+      ),
+    ]
+    const chosen = choose({ accounts, activeID: undefined, order: [], minHeadroom: 0 })
+    expect(chosen?.credentialID).toBe("soonRolling")
+  })
+
   it("ignores a sooner rolling reset when the monthly renewal is later", () => {
     const accounts = [
       evaluate(account("rollingSoon"), withMonthly(50, 30 * 24 * HOUR, HOUR)),
       evaluate(account("renewsSoon"), withMonthly(50, 5 * 24 * HOUR, 4 * HOUR)),
     ]
-    const chosen = chooseCandidate({ accounts, activeID: "active", order: [], minHeadroom: 0 })
+    const chosen = choose({ accounts, activeID: "active", order: [], minHeadroom: 0 })
     expect(chosen?.credentialID).toBe("renewsSoon")
   })
 
-  it("prefers headroom when two accounts reset at the same time", () => {
-    const accounts = [evaluate(account("a"), atReset(60, 2 * HOUR)), evaluate(account("b"), atReset(20, 2 * HOUR))]
-    const chosen = chooseCandidate({ accounts, activeID: "active", order: [], minHeadroom: 0 })
+  it("prefers credentialOrder before headroom when the timestamps tie", () => {
+    const accounts = [
+      evaluate(account("roomy"), atReset(20, 72 * HOUR)),
+      evaluate(account("ordered"), atReset(60, 72 * HOUR)),
+    ]
+    const chosen = choose({ accounts, activeID: "active", order: ["ordered", "roomy"], minHeadroom: 0 })
+    expect(chosen?.credentialID).toBe("ordered")
+  })
+
+  it("prefers greater headroom when the timestamps and credentialOrder tie", () => {
+    const accounts = [evaluate(account("a"), atReset(60, 72 * HOUR)), evaluate(account("b"), atReset(20, 72 * HOUR))]
+    const chosen = choose({ accounts, activeID: "active", order: [], minHeadroom: 0 })
     expect(chosen?.credentialID).toBe("b")
+  })
+
+  it("skips an account whose monthly renewal is in the past", () => {
+    const accounts = [evaluate(account("expired"), atReset(20, -HOUR)), evaluate(account("live"), atReset(20, 72 * HOUR))]
+    const chosen = choose({ accounts, activeID: "active", order: [], minHeadroom: 0 })
+    expect(chosen?.credentialID).toBe("live")
+  })
+
+  it("returns undefined when every eligible account has expired", () => {
+    const accounts = [
+      evaluate(account("expiredA"), atReset(20, -HOUR)),
+      evaluate(account("expiredB"), atReset(20, -2 * HOUR)),
+    ]
+    const chosen = choose({ accounts, activeID: "active", order: [], minHeadroom: 0 })
+    expect(chosen).toBeUndefined()
+  })
+
+  it("does not treat a past weekly or rolling reset as an expired subscription", () => {
+    const accounts = [
+      evaluate(
+        account("shortPast"),
+        windowsAt({
+          rolling: 5,
+          weekly: 5,
+          monthly: 20,
+          monthlyResetInMs: 72 * HOUR,
+          weeklyResetInMs: -HOUR,
+          rollingResetInMs: -2 * HOUR,
+        }),
+      ),
+      evaluate(account("laterMonthly"), windowsAt({ rolling: 5, weekly: 5, monthly: 20, monthlyResetInMs: 96 * HOUR })),
+    ]
+    const chosen = choose({ accounts, activeID: "active", order: [], minHeadroom: 0 })
+    expect(chosen?.credentialID).toBe("shortPast")
   })
 
   it("prefers an account with a known renewal over one that cannot be parsed", () => {
@@ -222,19 +338,19 @@ describe("chooseCandidate", () => {
       monthly: { status: "ok", percent: 5, resetsAt: "not-a-date" },
     }
     const accounts = [evaluate(account("broken"), broken), evaluate(account("soon"), atReset(50, 2 * HOUR))]
-    const chosen = chooseCandidate({ accounts, activeID: "active", order: [], minHeadroom: 0 })
+    const chosen = choose({ accounts, activeID: "active", order: [], minHeadroom: 0 })
     expect(chosen?.credentialID).toBe("soon")
   })
 
   it("prefers the earlier credentialOrder entry on a tie", () => {
     const accounts = [evaluated("b"), evaluated("a")]
-    const chosen = chooseCandidate({ accounts, activeID: "active", order: ["a", "b"], minHeadroom: 0 })
+    const chosen = choose({ accounts, activeID: "active", order: ["a", "b"], minHeadroom: 0 })
     expect(chosen?.credentialID).toBe("a")
   })
 
   it("returns undefined when every other account is under the headroom floor", () => {
     const accounts = [evaluate(account("active"), atReset(20, 72 * HOUR)), evaluate(account("soon"), atReset(95, HOUR))]
-    const chosen = chooseCandidate({ accounts, activeID: "active", order: [], minHeadroom: 10 })
+    const chosen = choose({ accounts, activeID: "active", order: [], minHeadroom: 10 })
     expect(chosen).toBeUndefined()
   })
 
@@ -243,7 +359,7 @@ describe("chooseCandidate", () => {
       evaluate(account("active"), windowsAt({ rolling: 5, weekly: 5, monthly: 20, monthlyResetInMs: 72 * HOUR })),
       evaluate(account("soon"), windowsAt({ rolling: 5, weekly: 5, monthly: 90, monthlyResetInMs: HOUR })),
     ]
-    const chosen = chooseCandidate({
+    const chosen = choose({
       accounts,
       activeID: "active",
       order: [],
@@ -254,14 +370,18 @@ describe("chooseCandidate", () => {
   })
 
   it("skips blocked and unknown accounts", () => {
-    const accounts = [evaluate(account("active"), usage(99, 99, 99)), evaluate(account("blocked"), usage(100)), evaluate(account("unknown"), undefined)]
-    const chosen = chooseCandidate({ accounts, activeID: "active", order: [], minHeadroom: 0 })
+    const accounts = [
+      evaluate(account("active"), usage(99, 99, 99)),
+      evaluate(account("blocked"), usage(100)),
+      evaluate(account("unknown"), undefined),
+    ]
+    const chosen = choose({ accounts, activeID: "active", order: [], minHeadroom: 0 })
     expect(chosen).toBeUndefined()
   })
 
   it("returns undefined when the active account is the only available one", () => {
     const accounts = [evaluated("active")]
-    expect(chooseCandidate({ accounts, activeID: "active", order: [], minHeadroom: 0 })).toBeUndefined()
+    expect(choose({ accounts, activeID: "active", order: [], minHeadroom: 0 })).toBeUndefined()
   })
 })
 
@@ -299,6 +419,20 @@ describe("soonestReset", () => {
       evaluate(account("ready"), usage(40, 10, 10)),
     ]
     expect(soonestReset(accounts, NOW)).toBe(0)
+  })
+
+  it("ignores an expired account when computing the wait", () => {
+    const expired = evaluate(account("expired"), {
+      rolling: { status: "ok", percent: 100, resetsAt: new Date(NOW - 3 * HOUR).toISOString() },
+      weekly: { status: "ok", percent: 100, resetsAt: new Date(NOW - 2 * HOUR).toISOString() },
+      monthly: { status: "ok", percent: 100, resetsAt: new Date(NOW - HOUR).toISOString() },
+    })
+    const weeklyBlocked = evaluate(account("weekly"), {
+      rolling: { status: "ok", percent: 10, resetsAt: new Date(NOW + HOUR).toISOString() },
+      weekly: { status: "ok", percent: 100, resetsAt: new Date(NOW + 72 * HOUR).toISOString() },
+      monthly: { status: "ok", percent: 10, resetsAt: new Date(NOW + 240 * HOUR).toISOString() },
+    })
+    expect(soonestReset([expired, weeklyBlocked], NOW)).toBe(72 * HOUR)
   })
 
   it("returns undefined when nothing is known", () => {

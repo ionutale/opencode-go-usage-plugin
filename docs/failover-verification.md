@@ -34,8 +34,10 @@ credentials saved.
 
 ## Unit coverage
 
-`pnpm test` → 163 tests, `pnpm typecheck` clean. Covered: config parsing, usage
+`pnpm test` → 174 tests, `pnpm typecheck` clean. Covered: config parsing, usage
 parsing and caching, timeout, error classification (including context overflow),
-account evaluation, candidate choice by renewal and headroom floor, blocking-window reset math,
-timer clamping, credential store, both hooks, periodic evaluation (cadence,
-disable, cleanup), degraded-mode cap, notifications, and the logger.
+account evaluation, candidate order by monthly/weekly/rolling timestamps and
+credentialOrder, expired monthly renewals, no-floor block/recovery, blocking-window
+reset math, timer clamping, credential store, both hooks, periodic evaluation
+(cadence, fresh fetch, disable, cleanup), degraded-mode cap, notifications, and
+the logger.

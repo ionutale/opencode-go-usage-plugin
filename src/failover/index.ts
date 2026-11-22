@@ -108,25 +108,27 @@ export function createFailover(injectedLog?: Logger) {
         log(`${reason}: ${account.label} (${account.headroom} points of headroom, ${formatRenewal(account.renewalAt)})`)
       }
 
-      const proactive = async () => {
+      const proactive = async (fresh = false) => {
         if (config.proactiveThreshold <= 0) return
         const activeID = await store.activeID()
-        const accounts = await snapshot(false)
+        const accounts = await snapshot(fresh)
         if (accounts.length < 2) return
 
         const active = accounts.find((account) => account.credentialID === activeID)
-        if (!active || active.state === "unknown") return
+        if (!active) return
 
         // Renewal-first queue: the active is included so that being the best
         // eligible account means no switch. An account leaves the queue once
-        // its monthly usage reaches the drain threshold or its headroom falls
-        // under the floor; a temporary weekly/rolling block only bridges.
+        // its monthly renewal has passed, any window hits 100%, or its monthly
+        // usage reaches the drain threshold. A temporary weekly/rolling block
+        // only bridges.
         const ideal = chooseCandidate({
           accounts,
           activeID: undefined,
           order: config.credentialOrder,
           minHeadroom: config.minHeadroom,
           monthlyUnder: config.proactiveThreshold,
+          nowMs: Date.now(),
         })
         if (!ideal || ideal.credentialID === activeID) return
 
@@ -154,6 +156,7 @@ export function createFailover(injectedLog?: Logger) {
             activeID,
             order: config.credentialOrder,
             minHeadroom: 0,
+            nowMs: Date.now(),
           })
           if (!candidate) return undefined
 
@@ -208,7 +211,7 @@ export function createFailover(injectedLog?: Logger) {
           ? setInterval(() => {
               void serial(async () => {
                 try {
-                  await proactive()
+                  await proactive(true)
                 } catch (error) {
                   log(`periodic evaluation failed: ${describe(error)}`)
                 }

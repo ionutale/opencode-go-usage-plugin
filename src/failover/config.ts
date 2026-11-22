@@ -18,8 +18,8 @@ const EMPTY_ORDER: string[] = Object.freeze([]) as unknown as string[]
 
 export const DEFAULTS: Config = Object.freeze({
   credentialOrder: EMPTY_ORDER,
-  proactiveThreshold: 90,
-  minHeadroom: 10,
+  proactiveThreshold: 100,
+  minHeadroom: 0,
   evaluateIntervalMs: 600_000,
   usageCacheMs: 10_000,
   waitBufferMs: 5_000,
