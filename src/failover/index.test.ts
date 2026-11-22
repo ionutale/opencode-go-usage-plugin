@@ -71,7 +71,7 @@ function fakeContext(input: {
   const connections = input.connections ?? CONNECTIONS
 
   const ctx = {
-    options: { ...(input.options ?? {}) },
+    options: { evaluateIntervalMs: 0, ...(input.options ?? {}) },
     integration: {
       get: async () => ({ data: { connections } }),
       connection: {
@@ -128,8 +128,12 @@ function stubUsage(usage: Record<string, UsageResponse>) {
 async function setup(input: Parameters<typeof fakeContext>[0]) {
   const fake = fakeContext(input)
   stubUsage(input.usage)
-  await (failover as unknown as { setup: (ctx: unknown) => Promise<void> | void }).setup(fake.ctx)
-  return fake
+  const cleanup = await (
+    failover as unknown as {
+      setup: (ctx: unknown) => Promise<(() => void) | void>
+    }
+  ).setup(fake.ctx)
+  return { ...fake, cleanup: cleanup ?? (() => {}) }
 }
 
 function retryEvent(
@@ -146,7 +150,10 @@ function retryEvent(
   }
 }
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+})
 
 describe("hook registration", () => {
   it("registers a provider-scoped retry hook and a prompt hook", async () => {
@@ -514,6 +521,54 @@ describe("proactive switching", () => {
       sessionModel: "anthropic",
     })
     await fake.hook("prompt")!({ sessionID: "ses_1" })
+    expect(fake.activated).toEqual([])
+  })
+})
+
+describe("periodic evaluation", () => {
+  it("re-evaluates on the interval without a prompt", async () => {
+    vi.useFakeTimers()
+    const fake = await setup({
+      usage: {
+        cred_1: usagePayload(20, { monthlyResetMs: 72 * HOUR }),
+        cred_2: usagePayload(12, { monthlyResetMs: 24 * HOUR }),
+        cred_3: usagePayload(7, { monthlyResetMs: 100 * HOUR }),
+      },
+      options: { proactiveThreshold: 90, evaluateIntervalMs: 600_000 },
+    })
+
+    await vi.advanceTimersByTimeAsync(600_000)
+    expect(fake.activated).toEqual(["cred_2"])
+  })
+
+  it("does not start a timer when the interval is zero", async () => {
+    vi.useFakeTimers()
+    const fake = await setup({
+      usage: {
+        cred_1: usagePayload(20, { monthlyResetMs: 72 * HOUR }),
+        cred_2: usagePayload(12, { monthlyResetMs: 24 * HOUR }),
+        cred_3: usagePayload(7, { monthlyResetMs: 100 * HOUR }),
+      },
+      options: { proactiveThreshold: 90, evaluateIntervalMs: 0 },
+    })
+
+    await vi.advanceTimersByTimeAsync(3_600_000)
+    expect(fake.activated).toEqual([])
+  })
+
+  it("clears the timer on dispose", async () => {
+    vi.useFakeTimers()
+    const fake = await setup({
+      usage: {
+        cred_1: usagePayload(20, { monthlyResetMs: 72 * HOUR }),
+        cred_2: usagePayload(12, { monthlyResetMs: 24 * HOUR }),
+        cred_3: usagePayload(7, { monthlyResetMs: 100 * HOUR }),
+      },
+      options: { proactiveThreshold: 90, evaluateIntervalMs: 600_000 },
+    })
+
+    await fake.cleanup()
+    await vi.advanceTimersByTimeAsync(600_000)
     expect(fake.activated).toEqual([])
   })
 })

@@ -121,8 +121,10 @@ Preference order defaults to the order credentials are stored; an explicit
 
 ### Proactive switching (G2)
 
-Evaluated once at each turn boundary, in the hook that admits a user prompt
-(`ctx.session.hook("prompt", ...)`), never on a timer:
+Evaluated at each turn boundary, in the hook that admits a user prompt
+(`ctx.session.hook("prompt", ...)`), and every `evaluateIntervalMs` (default 10
+minutes) by a background timer. The timer is unref'd and cleared by the plugin's
+cleanup:
 
 1. Refresh usage for all accounts (cache `usageCacheMs`; a cached read is
    acceptable here because the reactive path is the authoritative one).
@@ -135,14 +137,16 @@ Evaluated once at each turn boundary, in the hook that admits a user prompt
 4. Activate the selected account when it is not the active. Do not require a
    headroom gain: a sooner-renewing account with less headroom must win. A
    temporary weekly or rolling block bridges to the next eligible account; the
-   following prompt re-selects the earliest account after its window resets. Log
+   next evaluation re-selects the earliest account after its window resets. Log
    the switch with the monthly percentage and the renewal countdown.
 
-Doing this at prompt admission rather than on a background interval is
-deliberate: it cannot disturb a turn that is already streaming, it needs no
-cross-process coordination, and it needs no activity tracking. A turn that
-starts under the threshold and later blocks the account is handled by the
-reactive path, which is exactly the case the retry hook exists for.
+Prompt admission remains the primary checkpoint: it runs before a new turn starts
+and cannot disturb a turn that is already streaming. The background timer keeps
+the queue current when no prompt arrives — for example, when a weekly window
+resets overnight — at the cost that it may switch the global credential during a
+long turn. A request already in flight keeps its key, but the next model call in
+that turn may use the new account. Set `evaluateIntervalMs` to 0 to use prompt
+admission only.
 
 ### Reactive failover (G1)
 
@@ -200,6 +204,7 @@ usage endpoint, and log path are fixed and no longer configurable:
 | `credentialOrder` | `[]` | Preferred order, by label or credential ID; used only for ties |
 | `proactiveThreshold` | `90` | Drain each account's monthly quota to this percentage before moving to the next; `0` disables proactive switching |
 | `minHeadroom` | `10` | Do not switch into an account with less than this much headroom across any window |
+| `evaluateIntervalMs` | `600000` | Re-evaluate the renewal queue in the background this often; `0` evaluates only at prompt admission |
 | `usageCacheMs` | `10000` | Cache lifetime for usage reads |
 | `waitBufferMs` | `5000` | Added to a window reset before retrying |
 | `notify` | `false` | Post a synthetic session message on switch or long wait |
@@ -241,7 +246,8 @@ usage endpoint, and log path are fixed and no longer configurable:
 
 1. **Unit tests** (vitest) over pure policy functions: error classification,
    availability, headroom, candidate choice by renewal and headroom floor,
-   preference order, soonest-reset computation, wait clamp.
+   preference order, soonest-reset computation, wait clamp, periodic evaluation
+   (cadence, disable, cleanup).
 2. **Credential enumeration.** Confirm `integration.get` lists all three Go
    credentials and that `connection.resolve` returns a key for an *inactive*
    one. This decides whether the plugin runs in full mode or degraded mode, so

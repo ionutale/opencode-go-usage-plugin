@@ -5,6 +5,7 @@ export type Config = {
   credentialOrder: string[]
   proactiveThreshold: number
   minHeadroom: number
+  evaluateIntervalMs: number
   usageCacheMs: number
   waitBufferMs: number
   notify: boolean
@@ -19,6 +20,7 @@ export const DEFAULTS: Config = Object.freeze({
   credentialOrder: EMPTY_ORDER,
   proactiveThreshold: 90,
   minHeadroom: 10,
+  evaluateIntervalMs: 600_000,
   usageCacheMs: 10_000,
   waitBufferMs: 5_000,
   notify: false,
@@ -31,6 +33,7 @@ export function readConfig(options: Record<string, unknown> | undefined): Config
     credentialOrder: stringArray(source.credentialOrder),
     proactiveThreshold: nonNegative(source.proactiveThreshold, DEFAULTS.proactiveThreshold),
     minHeadroom: nonNegative(source.minHeadroom, DEFAULTS.minHeadroom),
+    evaluateIntervalMs: nonNegative(source.evaluateIntervalMs, DEFAULTS.evaluateIntervalMs),
     usageCacheMs: nonNegative(source.usageCacheMs, DEFAULTS.usageCacheMs),
     waitBufferMs: nonNegative(source.waitBufferMs, DEFAULTS.waitBufferMs),
     notify: typeof source.notify === "boolean" ? source.notify : DEFAULTS.notify,

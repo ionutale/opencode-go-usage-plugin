@@ -199,6 +199,24 @@ export function createFailover(injectedLog?: Logger) {
         { providerID: PROVIDER },
       )
 
+      // Re-evaluate on the same cadence as the usage display. The timer is
+      // unref'd so it never keeps the host process alive, and the plugin's
+      // cleanup clears it on unload. Decisions share the serial queue, so a
+      // periodic check cannot race a prompt or retry decision.
+      const evaluateTimer =
+        config.evaluateIntervalMs > 0 && config.proactiveThreshold > 0
+          ? setInterval(() => {
+              void serial(async () => {
+                try {
+                  await proactive()
+                } catch (error) {
+                  log(`periodic evaluation failed: ${describe(error)}`)
+                }
+              })
+            }, config.evaluateIntervalMs)
+          : undefined
+      evaluateTimer?.unref?.()
+
       async function reactive(event: RetryEvent) {
         if (!classifyLimitError(event.error)) return
 
@@ -278,6 +296,10 @@ export function createFailover(injectedLog?: Logger) {
         event.decision = { retry: true, delay }
         log(`all accounts blocked, waiting ${Math.round(delay / 1000)}s for the next window`)
         await notify(event.sessionID, `Every OpenCode Go account is out of quota; retrying in ${Math.round(delay / 1000)}s.`)
+      }
+
+      return () => {
+        if (evaluateTimer) clearInterval(evaluateTimer)
       }
     },
   })

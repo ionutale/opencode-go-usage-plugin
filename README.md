@@ -107,7 +107,11 @@ temporary weekly or rolling block only bridges to the next account, and the
 earliest-renewing account returns once its window resets. There is no
 headroom-gain gate, so a sooner-renewing account with less headroom still wins;
 greater headroom only breaks a tie between accounts with the same renewal.
-Sessions running on another provider are skipped.
+The prompt hook skips sessions running on another provider.
+
+The same selection runs every `evaluateIntervalMs` (10 minutes by default), so a
+window reset or a changed renewal order is picked up without waiting for a
+prompt. Set it to `0` to evaluate only on prompt admission.
 
 **After a limit error** (a Go limit, 429/402, or a limit-shaped message): the
 plugin re-reads usage, activates the available account whose plan renews soonest,
@@ -147,6 +151,10 @@ pending, the error surfaces instead of a buffer-only retry.
   puts the unavoidable remainder on the latest-renewing account. Raise
   `minHeadroom` to keep a larger safety buffer, or lower it to squeeze the last
   points.
+- The 10-minute evaluation can change the global credential while a long turn is
+  running. The in-flight request keeps its key, but the next model call in that
+  turn may use the new account. Set `evaluateIntervalMs` to `0` to evaluate only
+  at prompt admission.
 - The active credential is global. A proactive switch in one session changes the
   key the next request in another session uses; the plugin cannot pin a key per
   in-flight turn.
@@ -164,6 +172,7 @@ pending, the error surfaces instead of a buffer-only retry.
       "options": {
         "proactiveThreshold": 90,
         "minHeadroom": 10,
+        "evaluateIntervalMs": 600000,
         "credentialOrder": ["Work", "Personal"],
       },
     },
@@ -176,6 +185,7 @@ pending, the error surfaces instead of a buffer-only retry.
 | `credentialOrder` | `[]` | Preferred order, by label or credential ID; used only for ties |
 | `proactiveThreshold` | `90` | Drain each account's monthly quota to this percentage before moving to the next; `0` disables proactive switching |
 | `minHeadroom` | `10` | Do not switch into an account with less than this much headroom across any window |
+| `evaluateIntervalMs` | `600000` | Re-evaluate the renewal queue in the background this often; `0` evaluates only at prompt admission |
 | `usageCacheMs` | `10000` | Failover's own usage cache lifetime |
 | `waitBufferMs` | `5000` | Added to a window reset before retrying |
 | `maxWaitMs` | `300000` | Maximum wait before the error is handed back to OpenCode (five minutes) |
@@ -255,7 +265,7 @@ when both plugins are installed.
 pnpm install
 pnpm build:tui   # rebuild dist/tui.js after editing src/tui.tsx
 pnpm build:gui   # rebuild dist/gui-experimental.cjs after editing src/gui.tsx
-pnpm test        # 160 unit tests, including the failover half
+pnpm test        # 163 unit tests, including the failover half
 pnpm typecheck   # tsc --noEmit
 pnpm screenshots # regenerate the README previews in docs/screenshots
 pnpm smoke       # live call; needs a local Go key (/connect or OPENCODE_API_KEY)

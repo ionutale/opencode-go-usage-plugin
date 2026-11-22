@@ -5,6 +5,7 @@ const DOCUMENTED_DEFAULTS = {
   credentialOrder: [],
   proactiveThreshold: 90,
   minHeadroom: 10,
+  evaluateIntervalMs: 600_000,
   usageCacheMs: 10_000,
   waitBufferMs: 5_000,
   notify: false,
@@ -17,9 +18,16 @@ describe("readConfig", () => {
   })
 
   it("keeps valid overrides", () => {
-    const config = readConfig({ proactiveThreshold: 75, minHeadroom: 5, notify: true, maxWaitMs: 60_000 })
+    const config = readConfig({
+      proactiveThreshold: 75,
+      minHeadroom: 5,
+      evaluateIntervalMs: 30_000,
+      notify: true,
+      maxWaitMs: 60_000,
+    })
     expect(config.proactiveThreshold).toBe(75)
     expect(config.minHeadroom).toBe(5)
+    expect(config.evaluateIntervalMs).toBe(30_000)
     expect(config.notify).toBe(true)
     expect(config.maxWaitMs).toBe(60_000)
   })
@@ -28,12 +36,14 @@ describe("readConfig", () => {
     const config = readConfig({
       proactiveThreshold: "90",
       minHeadroom: -1,
+      evaluateIntervalMs: -1,
       usageCacheMs: -1,
       notify: "yes",
       credentialOrder: "Work",
     })
     expect(config.proactiveThreshold).toBe(90)
     expect(config.minHeadroom).toBe(10)
+    expect(config.evaluateIntervalMs).toBe(600_000)
     expect(config.usageCacheMs).toBe(10_000)
     expect(config.notify).toBe(false)
     expect(config.credentialOrder).toEqual([])
