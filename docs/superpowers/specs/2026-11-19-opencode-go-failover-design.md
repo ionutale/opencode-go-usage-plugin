@@ -208,6 +208,7 @@ usage endpoint, and log path are fixed and no longer configurable:
 
 | Option | Default | Meaning |
 | --- | --- | --- |
+| `failover` | `false` | Load the failover hooks; the usage display always loads |
 | `credentialOrder` | `[]` | Preferred order, by label or credential ID; breaks ties after the three timestamps |
 | `proactiveThreshold` | `100` | Monthly drain threshold; `100` uses the account until the monthly window is exhausted; `0` disables proactive switching |
 | `minHeadroom` | `0` | Optional floor across all windows; `0` uses the account until a window hits 100% |
@@ -278,15 +279,17 @@ usage endpoint, and log path are fixed and no longer configurable:
 
 ## Delivery
 
-- New repository `github:ionutale/opencode-go-failover`, private or public as
-  you prefer, with `package.json` exporting `.` from `src/index.ts`.
-- Loaded by adding `"github:ionutale/opencode-go-failover"` to `plugins` in
-  `~/.config/opencode/opencode.jsonc` (an existing backup of that file is kept
-  before editing).
-- Files: `src/index.ts` (plugin definition and hook wiring), `src/accounts.ts`
-  (credential listing, active resolution, selection), `src/usage.ts` (client,
-  parser, cache), `src/policy.ts` (pure decision functions), matching
-  `*.test.ts`, `README.md`, `tsconfig.json`.
+- The failover half ships inside `github:ionutale/opencode-go-usage-plugin`; the
+  old standalone `opencode-go-failover` repository no longer exists.
+- Opt in by adding the package as an object with
+  `options: { "failover": true }` to `plugins` in
+  `~/.config/opencode/opencode.jsonc`. Without the option the package only
+  displays usage and never changes the active credential.
+- Files: `src/index.ts` (usage RPC and failover gate), `src/failover/index.ts`
+  (hook wiring), `src/failover/accounts.ts` (credential listing, active
+  resolution, selection), `src/failover/usage.ts` (client, parser, cache),
+  `src/failover/policy.ts` (pure decision functions), matching `*.test.ts`,
+  `README.md`, `tsconfig.json`.
 
 ## Left to the builder
 

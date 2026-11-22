@@ -1,32 +1,34 @@
 # opencode-go-usage-plugin
 
-[OpenCode](https://opencode.ai) Go plan **usage** and automatic **account
-failover**, in one plugin.
+Unofficial [OpenCode](https://opencode.ai) plugin for **OpenCode Go plan usage**,
+with **optional automatic account failover**.
 
 - **Usage** — rolling, weekly, and monthly quota in the terminal sidebar and as
   three activity rings in the OpenCode Desktop session header. Click the rings to
   see every saved Go credential at once.
-- **Failover** — when the active credential nears its limit, or hits one, switch
-  to the account whose plan renews soonest and keep the turn running.
+- **Failover (opt-in)** — when enabled, keeps the earliest-renewing eligible
+  account active; when a window blocks, it switches to the next account and
+  retries.
 
 ![The usage rings in the session header](docs/screenshots/header-rings.png)
 
 *Preview of the desktop control, drawn from the widget's own layout and usage
-colors.*
+colors. Unofficial community plugin; not affiliated with OpenCode.*
 
-Both halves share one server plugin, one install, and one set of options. The
-failover code used to live in a separate repository; it is now part of this
-package.
+The display always loads. Failover is opt-in: set `"failover": true` to enable
+it. The failover code used to live in a separate repository; it is now part of
+this package.
 
 ## Requirements
 
-- OpenCode V2
+- OpenCode V2 (tested with 2.3.2; the desktop GUI API is experimental)
 - An OpenCode Go subscription, connected with `/connect` → **OpenCode Go**
-- **Two or more** Go credentials for failover; with one, the failover half does
-  nothing
+- For failover: **two or more** Go credentials and `"failover": true`; with one,
+  the failover half does nothing
 - For the terminal sidebar: about 34 columns of width for all three rows
 - For the desktop rings: OpenCode Desktop, with the plugin in your global
   `opencode.json(c)`
+- Tested on macOS; Linux should work; Windows is untested
 
 ## Install
 
@@ -34,14 +36,23 @@ package.
 opencode plugin add github:ionutale/opencode-go-usage-plugin
 ```
 
-Or add it to the `plugins` list in your `opencode.json(c)` manually:
+The command installs the **display**; failover is off by default. To enable
+failover, use the object form in your global `opencode.json(c)`:
 
 ```jsonc
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugins": ["github:ionutale/opencode-go-usage-plugin"],
+  "plugins": [
+    {
+      "package": "github:ionutale/opencode-go-usage-plugin",
+      "options": { "failover": true },
+    },
+  ],
 }
 ```
+
+Omit `failover` (or set it to `false`) to keep the display-only behavior. If you
+already added the plugin as a string, replace that entry with the object above.
 
 The plugin has a server part, a TUI part, and a desktop GUI part. The terminal
 sidebar and the desktop rings appear automatically; no separate install step.
@@ -97,6 +108,10 @@ global `opencode.json(c)`; the desktop app does not read `cli.json`. The GUI API
 is experimental upstream and may change between OpenCode releases.
 
 ## Automatic failover
+
+**Opt-in.** Failover runs only when the plugin options include
+`"failover": true`. Without it, the plugin only displays usage and never changes
+the active credential.
 
 **Before a turn and every `evaluateIntervalMs`** (10 minutes by default):
 the plugin fetches usage for every Go account and orders the eligible ones by
@@ -173,6 +188,7 @@ pending, the error surfaces instead of a buffer-only retry.
     {
       "package": "github:ionutale/opencode-go-usage-plugin",
       "options": {
+        "failover": true,
         "proactiveThreshold": 100,
         "minHeadroom": 0,
         "evaluateIntervalMs": 600000,
@@ -185,6 +201,7 @@ pending, the error surfaces instead of a buffer-only retry.
 
 | Option | Default | Meaning |
 | --- | --- | --- |
+| `failover` | `false` | Opt in to automatic credential switching; the display always loads |
 | `credentialOrder` | `[]` | Preferred order, by label or credential ID; breaks ties after the three timestamps |
 | `proactiveThreshold` | `100` | Monthly drain threshold; `100` uses the account until the monthly window is exhausted; `0` disables proactive switching |
 | `minHeadroom` | `0` | Optional floor across all windows; `0` uses the account until a window hits 100% |
@@ -213,10 +230,18 @@ prompt / retry hooks ───┘         │
   and renders `sidebar.footer`.
 - The **desktop GUI plugin** calls `getAll` for every credential and renders the
   header rings and the all-credentials list.
-- The **failover hooks** run server-side, at prompt admission and on a limit
+- When `failover` is enabled, the **failover hooks** run server-side, at prompt admission and on a limit
   retry, and activate a different credential through the integration API.
 - Because the fetches happen server-side, both widgets also work when your CLI is
   connected to a remote server.
+
+### Dependency note
+
+The plugin runs inside OpenCode's plugin SDK. A dependency audit may report
+transitive advisories in that SDK's packaging/build tooling. This repo pins
+patched `seroval`, `seroval-plugins`, `undici`, `ip-address`, and `@babel/core`;
+the remaining `glob`/`minimatch` advisories are build/package tooling, not the
+usage path. Usage keys go only to the fixed official endpoint.
 
 Endpoint shipped in [anomalyco/opencode#16513](https://github.com/anomalyco/opencode/pull/16513).
 
@@ -225,7 +250,7 @@ Endpoint shipped in [anomalyco/opencode#16513](https://github.com/anomalyco/open
 Failover decisions append one line to `~/.local/share/opencode/go-failover.log`:
 
 ```text
-2026-11-19T18:58:06.098Z [go-failover] switched ahead of the limit (100% -> 5%): Personal (95 points of headroom, renews in 12d 6h)
+2026-11-19T18:58:06.098Z [go-failover] switched to drain the soonest renewal (monthly 18%): Personal (95 points of headroom, renews in 12d 6h)
 2026-11-19T18:58:06.498Z [go-failover] rotated after a limit error: Work (76 points of headroom, renews in 5d 3h)
 2026-11-19T18:58:06.498Z [go-failover] all accounts blocked, waiting 7200s for the next window
 2026-11-21T18:32:51.000Z [go-failover] 429 at 33% looks like a rate limit, not quota; leaving the retry delay to OpenCode
@@ -242,7 +267,7 @@ API keys are never logged, stored, or written anywhere.
 | `Go usage: Go plan required` | The key has no Go subscription (HTTP 403) | Subscribe to Go or use a different key |
 | `Go usage: unreachable` | Network/API problem with no usable cached data | Retry shortly; check opencode.ai status |
 | Dimmed numbers / `cached` | Showing the last successful fetch (up to 5 minutes) | Usually resolves on the next refresh |
-| Failover does nothing | Fewer than two Go credentials, or you are on another provider | Add a second credential; failover only manages `opencode-go` sessions |
+| Failover does nothing | Failover is not enabled, fewer than two Go credentials, or you are on another provider | Set `"failover": true`, add a second credential; failover only manages `opencode-go` sessions |
 
 On desktop, if the rings never appear, open **Settings > Extensions > Plugins**.
 The plugin is listed there with a switch for its GUI, and a plugin whose id
@@ -268,7 +293,7 @@ when both plugins are installed.
 pnpm install
 pnpm build:tui   # rebuild dist/tui.js after editing src/tui.tsx
 pnpm build:gui   # rebuild dist/gui-experimental.cjs after editing src/gui.tsx
-pnpm test        # 174 unit tests, including the failover half
+pnpm test        # 176 unit tests, including the failover half
 pnpm typecheck   # tsc --noEmit
 pnpm screenshots # regenerate the README previews in docs/screenshots
 pnpm smoke       # live call; needs a local Go key (/connect or OPENCODE_API_KEY)

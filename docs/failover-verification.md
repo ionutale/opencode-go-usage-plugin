@@ -14,10 +14,10 @@ credentials saved.
   account, the next `opencode-go` model request carried that account's key while
   another account was active before. Activation is not limited to the credential
   list.
-- **Proactive switch, end to end.** With the stub reporting the active account at
-  100% and the others at 5%, prompt admission logged
-  `switched ahead of the limit (100% -> 5%)` followed by the chosen account's
-  label, and the following request carried that account's key.
+- **Proactive switch, end to end.** With the stub reporting the active account
+  exhausted and the others available, prompt admission logged
+  `switched to drain the soonest renewal (monthly X%)` followed by the chosen
+  account's label, and the following request carried that account's key.
 - **Logging.** Decision lines land in `~/.local/share/opencode/go-failover.log`.
 - **Plugin install.** The failover half was verified as a separate package and now
   ships inside `github:ionutale/opencode-go-usage-plugin`.
@@ -34,10 +34,10 @@ credentials saved.
 
 ## Unit coverage
 
-`pnpm test` → 174 tests, `pnpm typecheck` clean. Covered: config parsing, usage
+`pnpm test` → 176 tests, `pnpm typecheck` clean. Covered: config parsing, usage
 parsing and caching, timeout, error classification (including context overflow),
 account evaluation, candidate order by monthly/weekly/rolling timestamps and
 credentialOrder, expired monthly renewals, no-floor block/recovery, blocking-window
-reset math, timer clamping, credential store, both hooks, periodic evaluation
+reset math, timer clamping, credential store, both hooks, failover opt-in and cleanup, periodic evaluation
 (cadence, fresh fetch, disable, cleanup), degraded-mode cap, notifications, and
 the logger.

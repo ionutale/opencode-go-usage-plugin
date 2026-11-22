@@ -1,7 +1,7 @@
 {
   "name": "opencode-go-usage-plugin",
-  "version": "0.11.0",
-  "description": "OpenCode Go plan usage in the TUI and desktop, plus automatic account failover",
+  "version": "0.12.0",
+  "description": "OpenCode Go plan usage in the TUI and desktop, plus optional automatic account failover",
   "type": "module",
   "license": "MIT",
   "repository": "github:ionutale/opencode-go-usage-plugin",
@@ -50,5 +50,18 @@
     "vite": "^8.3.8",
     "vite-plugin-solid": "^2.11.16",
     "vitest": "^5.0.2"
-  }
+  },
+  "author": "Ion Utale",
+  "homepage": "https://github.com/ionutale/opencode-go-usage-plugin#readme",
+  "bugs": {
+    "url": "https://github.com/ionutale/opencode-go-usage-plugin/issues"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-go",
+    "usage",
+    "quota",
+    "failover",
+    "plugin"
+  ]
 }

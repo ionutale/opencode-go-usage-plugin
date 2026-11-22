@@ -15,11 +15,13 @@ type Registered = {
   implementation?: { get: (input: unknown, context: unknown) => Promise<unknown> }
 }
 
-function fakeCtx(credential: unknown) {
+function fakeCtx(credential: unknown, options: Record<string, unknown> = {}) {
   const registered: Registered = {}
+  const hooks: string[] = []
   const ctx = {
-    options: { logFile: "/tmp/opencode-go-failover-test.log" },
+    options: { failover: false, evaluateIntervalMs: 0, ...options },
     integration: {
+      get: async () => ({ data: { connections: [] } }),
       connection: {
         active: async (id: string) => (id === "opencode-go" ? { id: "conn-1" } : undefined),
         resolve: async () => credential,
@@ -33,14 +35,17 @@ function fakeCtx(credential: unknown) {
       },
     },
     session: {
-      hook: async () => ({ dispose: async () => {} }),
+      hook: async (name: string) => {
+        hooks.push(name)
+        return { dispose: async () => {} }
+      },
       synthetic: async () => {},
     },
     credential: {
       activate: async () => {},
     },
   }
-  return { ctx, registered }
+  return { ctx, registered, hooks }
 }
 
 async function invokeGet(credential: unknown) {
@@ -83,6 +88,24 @@ describe("server plugin", () => {
     const result = (await invokeGet(undefined)) as { error?: { type: string; message: string } }
     expect(result.error?.type).toBe("no_credential")
     expect(result.error?.message).toBe("not connected")
+  })
+})
+
+describe("failover opt-in", () => {
+  it("does not register failover hooks by default", async () => {
+    const { ctx, hooks } = fakeCtx("key")
+    await (plugin as unknown as { setup: (ctx: unknown) => Promise<void> }).setup(ctx)
+    expect(hooks).toEqual([])
+  })
+
+  it("registers failover hooks and returns its cleanup when enabled", async () => {
+    const { ctx, hooks } = fakeCtx("key", { failover: true })
+    const cleanup = await (
+      plugin as unknown as { setup: (ctx: unknown) => Promise<(() => void | Promise<void>) | void> }
+    ).setup(ctx)
+    expect(hooks).toEqual(["prompt", "retry"])
+    expect(typeof cleanup).toBe("function")
+    await cleanup?.()
   })
 })
 

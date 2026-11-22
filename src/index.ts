@@ -41,7 +41,16 @@ export default Plugin.define({
       },
     })
 
-    // The failover half shares this plugin's options and hooks the same context.
-    await failover.setup(ctx)
+    // The display always loads. Failover is opt-in so a usage-only install
+    // never changes the global active credential.
+    const failoverEnabled = (ctx.options as { failover?: boolean }).failover === true
+    let failoverCleanup: (() => void | Promise<void>) | undefined
+    if (failoverEnabled) {
+      failoverCleanup = (await failover.setup(ctx)) ?? undefined
+    }
+
+    return async () => {
+      await failoverCleanup?.()
+    }
   },
 })

@@ -1,5 +1,10 @@
 # OpenCode Go Failover Implementation Plan
 
+> **Historical plan.** This document built the original separate
+> `opencode-go-failover` package. That repository no longer exists; the failover
+> code now lives in `opencode-go-usage-plugin`. Use the root README for install
+> and current behavior.
+
 > **Updated 2026-11-19:** account choice now prefers the plan that renews soonest
 > (headroom breaks ties), classification uses the host error taxonomy before
 > message patterns, and waits clamp to the platform timer maximum. Where this

@@ -1,3 +1,9 @@
 allowBuilds:
   esbuild: true
   msgpackr-extract: false
+overrides:
+  seroval: 1.6.11
+  seroval-plugins: 1.6.11
+  undici: 6.29.1
+  ip-address: 10.7.4
+  "@babel/core": 7.29.6
