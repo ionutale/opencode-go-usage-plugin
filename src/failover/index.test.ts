@@ -16,7 +16,14 @@ type UsageResponse = {
 
 function usagePayload(
   rolling: number,
-  options: { blocked?: boolean; resetInMs?: number; resetAllMs?: number; monthlyResetMs?: number } = {},
+  options: {
+    blocked?: boolean
+    resetInMs?: number
+    resetAllMs?: number
+    monthlyResetMs?: number
+    weekly?: number
+    monthly?: number
+  } = {},
 ): UsageResponse {
   const at = (ms: number) => new Date(BASE + ms).toISOString()
   const all = options.resetAllMs
@@ -27,8 +34,16 @@ function usagePayload(
         percent: rolling,
         resetsAt: at(all ?? options.resetInMs ?? HOUR),
       },
-      weekly: { status: "ok", percent: Math.max(0, rolling - 1), resetsAt: at(all ?? 2 * HOUR) },
-      monthly: { status: "ok", percent: Math.max(0, rolling - 2), resetsAt: at(all ?? options.monthlyResetMs ?? 72 * HOUR) },
+      weekly: {
+        status: "ok",
+        percent: options.weekly ?? Math.max(0, rolling - 1),
+        resetsAt: at(all ?? 2 * HOUR),
+      },
+      monthly: {
+        status: "ok",
+        percent: options.monthly ?? Math.max(0, rolling - 2),
+        resetsAt: at(all ?? options.monthlyResetMs ?? 72 * HOUR),
+      },
     },
   }
 }
@@ -397,22 +412,89 @@ describe("notifications", () => {
 })
 
 describe("proactive switching", () => {
-  it("switches on prompt admission above the threshold", async () => {
+  it("switches to the earliest-renewing account while the active is below the drain threshold", async () => {
     const fake = await setup({
-      usage: { cred_1: usagePayload(40), cred_2: usagePayload(5), cred_3: usagePayload(2) },
-      options: { proactiveThreshold: 10 },
+      usage: {
+        cred_1: usagePayload(40, { monthlyResetMs: 72 * HOUR }),
+        cred_2: usagePayload(12, { monthlyResetMs: 24 * HOUR }),
+        cred_3: usagePayload(7, { monthlyResetMs: 100 * HOUR }),
+      },
+      options: { proactiveThreshold: 90 },
     })
     await fake.hook("prompt")!({ sessionID: "ses_1" })
-    expect(fake.activated).toEqual(["cred_3"])
+    expect(fake.activated).toEqual(["cred_2"])
   })
 
-  it("does nothing proactively when the active account is below the threshold", async () => {
+  it("does not switch when the active account is the earliest renewal and below the threshold", async () => {
     const fake = await setup({
-      usage: { cred_1: usagePayload(40), cred_2: usagePayload(5), cred_3: usagePayload(2) },
+      usage: {
+        cred_1: usagePayload(20, { monthlyResetMs: 24 * HOUR }),
+        cred_2: usagePayload(10, { monthlyResetMs: 48 * HOUR }),
+        cred_3: usagePayload(5, { monthlyResetMs: 100 * HOUR }),
+      },
+    })
+    await fake.hook("prompt")!({ sessionID: "ses_1" })
+    expect(fake.activated).toEqual([])
+  })
+
+  it("moves on when the earliest-renewing account reaches the drain threshold", async () => {
+    const fake = await setup({
+      usage: {
+        cred_1: usagePayload(5, { weekly: 5, monthly: 90, monthlyResetMs: 24 * HOUR }),
+        cred_2: usagePayload(12, { monthlyResetMs: 48 * HOUR }),
+        cred_3: usagePayload(7, { monthlyResetMs: 100 * HOUR }),
+      },
+      options: { proactiveThreshold: 90 },
+    })
+    await fake.hook("prompt")!({ sessionID: "ses_1" })
+    expect(fake.activated).toEqual(["cred_2"])
+  })
+
+  it("honors a lower headroom floor when squeezing the last points", async () => {
+    const fake = await setup({
+      usage: {
+        cred_1: usagePayload(20, { weekly: 93, monthly: 20, monthlyResetMs: 24 * HOUR }),
+        cred_2: usagePayload(12, { monthlyResetMs: 48 * HOUR }),
+        cred_3: usagePayload(7, { monthlyResetMs: 100 * HOUR }),
+      },
+      active: "cred_2",
+      options: { proactiveThreshold: 90, minHeadroom: 5 },
+    })
+    await fake.hook("prompt")!({ sessionID: "ses_1" })
+    expect(fake.activated).toEqual(["cred_1"])
+  })
+
+  it("does not switch into an account whose weekly window leaves less than the headroom floor", async () => {
+    const fake = await setup({
+      usage: {
+        cred_1: usagePayload(20, { weekly: 93, monthly: 20, monthlyResetMs: 24 * HOUR }),
+        cred_2: usagePayload(12, { monthlyResetMs: 48 * HOUR }),
+        cred_3: usagePayload(7, { monthlyResetMs: 100 * HOUR }),
+      },
+      active: "cred_2",
       options: { proactiveThreshold: 90 },
     })
     await fake.hook("prompt")!({ sessionID: "ses_1" })
     expect(fake.activated).toEqual([])
+  })
+
+  it("returns to the earliest-renewing account when its weekly window resets", async () => {
+    const usage = {
+      cred_1: usagePayload(20, { weekly: 93, monthly: 20, monthlyResetMs: 24 * HOUR }),
+      cred_2: usagePayload(12, { monthlyResetMs: 48 * HOUR }),
+      cred_3: usagePayload(7, { monthlyResetMs: 100 * HOUR }),
+    }
+    const fake = await setup({
+      usage,
+      active: "cred_2",
+      options: { proactiveThreshold: 90, usageCacheMs: 0 },
+    })
+    await fake.hook("prompt")!({ sessionID: "ses_1" })
+    expect(fake.activated).toEqual([])
+
+    usage.cred_1 = usagePayload(20, { weekly: 0, monthly: 20, monthlyResetMs: 24 * HOUR })
+    await fake.hook("prompt")!({ sessionID: "ses_1" })
+    expect(fake.activated).toEqual(["cred_1"])
   })
 
   it("does not switch proactively when the session model is unset", async () => {

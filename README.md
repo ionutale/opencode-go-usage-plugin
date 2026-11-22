@@ -98,12 +98,16 @@ is experimental upstream and may change between OpenCode releases.
 
 ## Automatic failover
 
-**Before a turn** (prompt admission, never mid-turn): if the active account has
-crossed the threshold, the plugin compares every Go account's usage and activates
-the one whose plan renews soonest (the monthly reset), so capacity that would
-otherwise expire unused is spent first. Greater headroom breaks a tie, and it
-only switches when that is at least `hysteresisPoints` better, so it does not
-flap between accounts. Sessions running on another provider are skipped.
+**Before a turn** (prompt admission, never mid-turn): the plugin orders the Go
+accounts by their monthly renewal and selects the earliest-renewing account that
+is still below `proactiveThreshold` and has at least `minHeadroom` left across
+its rolling, weekly, and monthly windows. If that is not the active account, it
+switches. This spends capacity that would otherwise expire unused first; a
+temporary weekly or rolling block only bridges to the next account, and the
+earliest-renewing account returns once its window resets. There is no
+headroom-gain gate, so a sooner-renewing account with less headroom still wins;
+greater headroom only breaks a tie between accounts with the same renewal.
+Sessions running on another provider are skipped.
 
 **After a limit error** (a Go limit, 429/402, or a limit-shaped message): the
 plugin re-reads usage, activates the available account whose plan renews soonest,
@@ -138,6 +142,11 @@ pending, the error surfaces instead of a buffer-only retry.
 - If a credential's key cannot be read, that account is treated as unmeasured and
   the plugin rotates blind on a limit error, then re-checks.
 - Usage percentages are coarse; the decisions are only as precise as they are.
+- The queue drains in monthly-renewal order and does not keep a reserve. If your
+  total demand is below total capacity, some quota must go unused; the policy
+  puts the unavoidable remainder on the latest-renewing account. Raise
+  `minHeadroom` to keep a larger safety buffer, or lower it to squeeze the last
+  points.
 - The active credential is global. A proactive switch in one session changes the
   key the next request in another session uses; the plugin cannot pin a key per
   in-flight turn.
@@ -154,7 +163,7 @@ pending, the error surfaces instead of a buffer-only retry.
       "package": "github:ionutale/opencode-go-usage-plugin",
       "options": {
         "proactiveThreshold": 90,
-        "hysteresisPoints": 10,
+        "minHeadroom": 10,
         "credentialOrder": ["Work", "Personal"],
       },
     },
@@ -164,9 +173,9 @@ pending, the error surfaces instead of a buffer-only retry.
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `credentialOrder` | `[]` | Preferred order, by label or credential ID; ties use it |
-| `proactiveThreshold` | `90` | Percent at which a new turn moves off the active account; `0` disables |
-| `hysteresisPoints` | `10` | Minimum headroom gain required to switch |
+| `credentialOrder` | `[]` | Preferred order, by label or credential ID; used only for ties |
+| `proactiveThreshold` | `90` | Drain each account's monthly quota to this percentage before moving to the next; `0` disables proactive switching |
+| `minHeadroom` | `10` | Do not switch into an account with less than this much headroom across any window |
 | `usageCacheMs` | `10000` | Failover's own usage cache lifetime |
 | `waitBufferMs` | `5000` | Added to a window reset before retrying |
 | `maxWaitMs` | `300000` | Maximum wait before the error is handed back to OpenCode (five minutes) |
@@ -246,7 +255,7 @@ when both plugins are installed.
 pnpm install
 pnpm build:tui   # rebuild dist/tui.js after editing src/tui.tsx
 pnpm build:gui   # rebuild dist/gui-experimental.cjs after editing src/gui.tsx
-pnpm test        # 152 unit tests, including the failover half
+pnpm test        # 160 unit tests, including the failover half
 pnpm typecheck   # tsc --noEmit
 pnpm screenshots # regenerate the README previews in docs/screenshots
 pnpm smoke       # live call; needs a local Go key (/connect or OPENCODE_API_KEY)

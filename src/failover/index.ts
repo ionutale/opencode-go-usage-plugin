@@ -116,20 +116,27 @@ export function createFailover(injectedLog?: Logger) {
 
         const active = accounts.find((account) => account.credentialID === activeID)
         if (!active || active.state === "unknown") return
-        if (active.state === "available" && fullest(active) < config.proactiveThreshold) return
 
-        const candidate = chooseCandidate({
+        // Renewal-first queue: the active is included so that being the best
+        // eligible account means no switch. An account leaves the queue once
+        // its monthly usage reaches the drain threshold or its headroom falls
+        // under the floor; a temporary weekly/rolling block only bridges.
+        const ideal = chooseCandidate({
           accounts,
-          activeID,
+          activeID: undefined,
           order: config.credentialOrder,
-          hysteresisPoints: config.hysteresisPoints,
+          minHeadroom: config.minHeadroom,
+          monthlyUnder: config.proactiveThreshold,
         })
-        if (!candidate) return
+        if (!ideal || ideal.credentialID === activeID) return
 
         try {
-          await activate(candidate, `switched ahead of the limit (${fullest(active)}% -> ${fullest(candidate)}%)`)
+          await activate(
+            ideal,
+            `switched to drain the soonest renewal (monthly ${Math.round(ideal.usage?.monthly.percent ?? 0)}%)`,
+          )
         } catch (error) {
-          log(`activation failed for ${candidate.label}: ${describe(error)}`)
+          log(`activation failed for ${ideal.label}: ${describe(error)}`)
         }
       }
 
@@ -146,7 +153,7 @@ export function createFailover(injectedLog?: Logger) {
             accounts: remaining,
             activeID,
             order: config.credentialOrder,
-            hysteresisPoints: 0,
+            minHeadroom: 0,
           })
           if (!candidate) return undefined
 

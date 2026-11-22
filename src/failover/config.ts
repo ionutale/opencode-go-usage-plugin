@@ -4,7 +4,7 @@ import { join } from "node:path"
 export type Config = {
   credentialOrder: string[]
   proactiveThreshold: number
-  hysteresisPoints: number
+  minHeadroom: number
   usageCacheMs: number
   waitBufferMs: number
   notify: boolean
@@ -18,7 +18,7 @@ const EMPTY_ORDER: string[] = Object.freeze([]) as unknown as string[]
 export const DEFAULTS: Config = Object.freeze({
   credentialOrder: EMPTY_ORDER,
   proactiveThreshold: 90,
-  hysteresisPoints: 10,
+  minHeadroom: 10,
   usageCacheMs: 10_000,
   waitBufferMs: 5_000,
   notify: false,
@@ -30,7 +30,7 @@ export function readConfig(options: Record<string, unknown> | undefined): Config
   return {
     credentialOrder: stringArray(source.credentialOrder),
     proactiveThreshold: nonNegative(source.proactiveThreshold, DEFAULTS.proactiveThreshold),
-    hysteresisPoints: nonNegative(source.hysteresisPoints, DEFAULTS.hysteresisPoints),
+    minHeadroom: nonNegative(source.minHeadroom, DEFAULTS.minHeadroom),
     usageCacheMs: nonNegative(source.usageCacheMs, DEFAULTS.usageCacheMs),
     waitBufferMs: nonNegative(source.waitBufferMs, DEFAULTS.waitBufferMs),
     notify: typeof source.notify === "boolean" ? source.notify : DEFAULTS.notify,

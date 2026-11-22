@@ -4,7 +4,7 @@ import { DEFAULTS, readConfig } from "./config"
 const DOCUMENTED_DEFAULTS = {
   credentialOrder: [],
   proactiveThreshold: 90,
-  hysteresisPoints: 10,
+  minHeadroom: 10,
   usageCacheMs: 10_000,
   waitBufferMs: 5_000,
   notify: false,
@@ -17,16 +17,23 @@ describe("readConfig", () => {
   })
 
   it("keeps valid overrides", () => {
-    const config = readConfig({ proactiveThreshold: 75, hysteresisPoints: 5, notify: true, maxWaitMs: 60_000 })
+    const config = readConfig({ proactiveThreshold: 75, minHeadroom: 5, notify: true, maxWaitMs: 60_000 })
     expect(config.proactiveThreshold).toBe(75)
-    expect(config.hysteresisPoints).toBe(5)
+    expect(config.minHeadroom).toBe(5)
     expect(config.notify).toBe(true)
     expect(config.maxWaitMs).toBe(60_000)
   })
 
   it("falls back for wrong types instead of throwing", () => {
-    const config = readConfig({ proactiveThreshold: "90", usageCacheMs: -1, notify: "yes", credentialOrder: "Work" })
+    const config = readConfig({
+      proactiveThreshold: "90",
+      minHeadroom: -1,
+      usageCacheMs: -1,
+      notify: "yes",
+      credentialOrder: "Work",
+    })
     expect(config.proactiveThreshold).toBe(90)
+    expect(config.minHeadroom).toBe(10)
     expect(config.usageCacheMs).toBe(10_000)
     expect(config.notify).toBe(false)
     expect(config.credentialOrder).toEqual([])

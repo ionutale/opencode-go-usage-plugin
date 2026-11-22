@@ -32,6 +32,24 @@ function withMonthly(percent: number, monthlyResetInMs: number, rollingResetInMs
   }
 }
 
+/** Distinct window percentages, with the monthly renewal set independently. */
+function windowsAt(input: {
+  rolling: number
+  weekly: number
+  monthly: number
+  monthlyResetInMs: number
+}): UsageWindows {
+  return {
+    rolling: { status: "ok", percent: input.rolling, resetsAt: new Date(NOW + HOUR).toISOString() },
+    weekly: { status: "ok", percent: input.weekly, resetsAt: new Date(NOW + 2 * HOUR).toISOString() },
+    monthly: {
+      status: "ok",
+      percent: input.monthly,
+      resetsAt: new Date(NOW + input.monthlyResetInMs).toISOString(),
+    },
+  }
+}
+
 const account = (id: string): Account => ({ credentialID: id, label: id })
 
 describe("classifyLimitError", () => {
@@ -128,8 +146,58 @@ describe("chooseCandidate", () => {
       evaluate(account("roomy"), atReset(20, 72 * HOUR)),
       evaluate(account("soon"), atReset(60, 2 * HOUR)),
     ]
-    const chosen = chooseCandidate({ accounts, activeID: "active", order: [], hysteresisPoints: 0 })
+    const chosen = chooseCandidate({ accounts, activeID: "active", order: [], minHeadroom: 0 })
     expect(chosen?.credentialID).toBe("soon")
+  })
+
+  it("picks a sooner-renewing account even when it has less headroom than the active", () => {
+    const accounts = [
+      evaluate(account("active"), atReset(20, 72 * HOUR)),
+      evaluate(account("soon"), atReset(60, 2 * HOUR)),
+    ]
+    const chosen = chooseCandidate({ accounts, activeID: "active", order: [], minHeadroom: 0 })
+    expect(chosen?.credentialID).toBe("soon")
+  })
+
+  it("skips a candidate under the headroom floor and picks the next", () => {
+    const accounts = [
+      evaluate(account("active"), atReset(20, 72 * HOUR)),
+      evaluate(account("soon"), atReset(95, HOUR)),
+      evaluate(account("next"), atReset(50, 24 * HOUR)),
+    ]
+    const chosen = chooseCandidate({ accounts, activeID: "active", order: [], minHeadroom: 10 })
+    expect(chosen?.credentialID).toBe("next")
+  })
+
+  it("skips an account whose monthly usage is at the drain threshold", () => {
+    const accounts = [
+      evaluate(account("active"), windowsAt({ rolling: 5, weekly: 5, monthly: 20, monthlyResetInMs: 72 * HOUR })),
+      evaluate(account("atThreshold"), windowsAt({ rolling: 5, weekly: 5, monthly: 90, monthlyResetInMs: HOUR })),
+      evaluate(account("next"), windowsAt({ rolling: 5, weekly: 5, monthly: 50, monthlyResetInMs: 24 * HOUR })),
+    ]
+    const chosen = chooseCandidate({
+      accounts,
+      activeID: "active",
+      order: [],
+      minHeadroom: 0,
+      monthlyUnder: 90,
+    })
+    expect(chosen?.credentialID).toBe("next")
+  })
+
+  it("includes the active when it is the best eligible account", () => {
+    const accounts = [
+      evaluate(account("active"), windowsAt({ rolling: 5, weekly: 5, monthly: 20, monthlyResetInMs: HOUR })),
+      evaluate(account("other"), windowsAt({ rolling: 5, weekly: 5, monthly: 10, monthlyResetInMs: 48 * HOUR })),
+    ]
+    const chosen = chooseCandidate({
+      accounts,
+      activeID: undefined,
+      order: [],
+      minHeadroom: 0,
+      monthlyUnder: 90,
+    })
+    expect(chosen?.credentialID).toBe("active")
   })
 
   it("ignores a sooner rolling reset when the monthly renewal is later", () => {
@@ -137,13 +205,13 @@ describe("chooseCandidate", () => {
       evaluate(account("rollingSoon"), withMonthly(50, 30 * 24 * HOUR, HOUR)),
       evaluate(account("renewsSoon"), withMonthly(50, 5 * 24 * HOUR, 4 * HOUR)),
     ]
-    const chosen = chooseCandidate({ accounts, activeID: "active", order: [], hysteresisPoints: 0 })
+    const chosen = chooseCandidate({ accounts, activeID: "active", order: [], minHeadroom: 0 })
     expect(chosen?.credentialID).toBe("renewsSoon")
   })
 
   it("prefers headroom when two accounts reset at the same time", () => {
     const accounts = [evaluate(account("a"), atReset(60, 2 * HOUR)), evaluate(account("b"), atReset(20, 2 * HOUR))]
-    const chosen = chooseCandidate({ accounts, activeID: "active", order: [], hysteresisPoints: 0 })
+    const chosen = chooseCandidate({ accounts, activeID: "active", order: [], minHeadroom: 0 })
     expect(chosen?.credentialID).toBe("b")
   })
 
@@ -154,37 +222,46 @@ describe("chooseCandidate", () => {
       monthly: { status: "ok", percent: 5, resetsAt: "not-a-date" },
     }
     const accounts = [evaluate(account("broken"), broken), evaluate(account("soon"), atReset(50, 2 * HOUR))]
-    const chosen = chooseCandidate({ accounts, activeID: "active", order: [], hysteresisPoints: 0 })
+    const chosen = chooseCandidate({ accounts, activeID: "active", order: [], minHeadroom: 0 })
     expect(chosen?.credentialID).toBe("soon")
-  })
-
-  it("still applies the hysteresis gate before the reset preference", () => {
-    const accounts = [evaluate(account("active"), atReset(95, 72 * HOUR)), evaluate(account("soon"), atReset(88, HOUR))]
-    const chosen = chooseCandidate({ accounts, activeID: "active", order: [], hysteresisPoints: 10 })
-    expect(chosen).toBeUndefined()
   })
 
   it("prefers the earlier credentialOrder entry on a tie", () => {
     const accounts = [evaluated("b"), evaluated("a")]
-    const chosen = chooseCandidate({ accounts, activeID: "active", order: ["a", "b"], hysteresisPoints: 0 })
+    const chosen = chooseCandidate({ accounts, activeID: "active", order: ["a", "b"], minHeadroom: 0 })
     expect(chosen?.credentialID).toBe("a")
   })
 
-  it("returns undefined when the best gain is under the hysteresis", () => {
-    const accounts = [evaluate(account("active"), usage(12, 10, 10)), evaluate(account("other"), usage(4, 3, 2))]
-    const chosen = chooseCandidate({ accounts, activeID: "active", order: [], hysteresisPoints: 10 })
+  it("returns undefined when every other account is under the headroom floor", () => {
+    const accounts = [evaluate(account("active"), atReset(20, 72 * HOUR)), evaluate(account("soon"), atReset(95, HOUR))]
+    const chosen = chooseCandidate({ accounts, activeID: "active", order: [], minHeadroom: 10 })
+    expect(chosen).toBeUndefined()
+  })
+
+  it("returns undefined when every other account is at the monthly threshold", () => {
+    const accounts = [
+      evaluate(account("active"), windowsAt({ rolling: 5, weekly: 5, monthly: 20, monthlyResetInMs: 72 * HOUR })),
+      evaluate(account("soon"), windowsAt({ rolling: 5, weekly: 5, monthly: 90, monthlyResetInMs: HOUR })),
+    ]
+    const chosen = chooseCandidate({
+      accounts,
+      activeID: "active",
+      order: [],
+      minHeadroom: 0,
+      monthlyUnder: 90,
+    })
     expect(chosen).toBeUndefined()
   })
 
   it("skips blocked and unknown accounts", () => {
     const accounts = [evaluate(account("active"), usage(99, 99, 99)), evaluate(account("blocked"), usage(100)), evaluate(account("unknown"), undefined)]
-    const chosen = chooseCandidate({ accounts, activeID: "active", order: [], hysteresisPoints: 0 })
+    const chosen = chooseCandidate({ accounts, activeID: "active", order: [], minHeadroom: 0 })
     expect(chosen).toBeUndefined()
   })
 
   it("returns undefined when the active account is the only available one", () => {
     const accounts = [evaluated("active")]
-    expect(chooseCandidate({ accounts, activeID: "active", order: [], hysteresisPoints: 0 })).toBeUndefined()
+    expect(chooseCandidate({ accounts, activeID: "active", order: [], minHeadroom: 0 })).toBeUndefined()
   })
 })
 

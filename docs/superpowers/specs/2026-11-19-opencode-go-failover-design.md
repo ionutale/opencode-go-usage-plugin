@@ -126,14 +126,17 @@ Evaluated once at each turn boundary, in the hook that admits a user prompt
 
 1. Refresh usage for all accounts (cache `usageCacheMs`; a cached read is
    acceptable here because the reactive path is the authoritative one).
-2. Leave everything alone when the active account is `available` and its highest
-   window percent is below `proactiveThreshold` (default 90), or when
-   `proactiveThreshold` is 0, or when only one account exists.
-3. Otherwise pick the `available` account whose `renewalAt` is earliest — the
-   plan that renews first — with greater `headroom` as the tie-breaker, then
-   preference order, excluding the active account.
-4. Activate it only if its headroom beats the active account's by at least
-   `hysteresisPoints` (default 10). Log the switch with both percentages.
+2. Leave everything alone when `proactiveThreshold` is 0 or when only one
+   account exists.
+3. Otherwise pick the earliest-renewing `available` account whose monthly usage
+   is below `proactiveThreshold` (default 90) and whose headroom across every
+   window is at least `minHeadroom` (default 10). Include the active account in
+   that comparison; if it is the best eligible account, there is nothing to do.
+4. Activate the selected account when it is not the active. Do not require a
+   headroom gain: a sooner-renewing account with less headroom must win. A
+   temporary weekly or rolling block bridges to the next eligible account; the
+   following prompt re-selects the earliest account after its window resets. Log
+   the switch with the monthly percentage and the renewal countdown.
 
 Doing this at prompt admission rather than on a background interval is
 deliberate: it cannot disturb a turn that is already streaming, it needs no
@@ -194,9 +197,9 @@ usage endpoint, and log path are fixed and no longer configurable:
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `credentialOrder` | `[]` | Preferred order, by label or credential ID |
-| `proactiveThreshold` | `90` | Percent at which a new turn switches off the active account; `0` disables |
-| `hysteresisPoints` | `10` | Minimum headroom gain required to switch |
+| `credentialOrder` | `[]` | Preferred order, by label or credential ID; used only for ties |
+| `proactiveThreshold` | `90` | Drain each account's monthly quota to this percentage before moving to the next; `0` disables proactive switching |
+| `minHeadroom` | `10` | Do not switch into an account with less than this much headroom across any window |
 | `usageCacheMs` | `10000` | Cache lifetime for usage reads |
 | `waitBufferMs` | `5000` | Added to a window reset before retrying |
 | `notify` | `false` | Post a synthetic session message on switch or long wait |
@@ -237,8 +240,8 @@ usage endpoint, and log path are fixed and no longer configurable:
 ## Verification
 
 1. **Unit tests** (vitest) over pure policy functions: error classification,
-   availability, headroom, candidate choice with hysteresis and preference
-   order, soonest-reset computation, wait clamp.
+   availability, headroom, candidate choice by renewal and headroom floor,
+   preference order, soonest-reset computation, wait clamp.
 2. **Credential enumeration.** Confirm `integration.get` lists all three Go
    credentials and that `connection.resolve` returns a key for an *inactive*
    one. This decides whether the plugin runs in full mode or degraded mode, so

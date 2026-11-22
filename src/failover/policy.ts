@@ -67,20 +67,23 @@ export function chooseCandidate(input: {
   accounts: readonly Evaluated[]
   activeID: string | undefined
   order: readonly string[]
-  hysteresisPoints: number
+  /** Minimum headroom across every window an account must have to be selected. */
+  minHeadroom: number
+  /** When set, only accounts whose monthly usage is below this percentage are eligible. */
+  monthlyUnder?: number
 }): Evaluated | undefined {
-  const active = input.accounts.find((account) => account.credentialID === input.activeID)
-  const activeHeadroom = active?.state === "available" ? active.headroom : 0
-
   // The plan renewal decides the order: the account whose monthly window
-  // renews soonest is the one whose quota would otherwise be wasted. Rolling
-  // and weekly windows reset too often to say anything about renewal order.
-  // Headroom only breaks ties, and the hysteresis gate still decides whether
-  // to move at all.
+  // renews soonest is the one whose quota would otherwise be wasted. An
+  // account stays eligible until its monthly usage reaches the drain
+  // threshold and while it still has the minimum headroom. There is no
+  // headroom-gain gate: a sooner-renewing account with less headroom wins.
   const renewalRank = (account: Evaluated) => account.renewalAt ?? Number.POSITIVE_INFINITY
+  const monthly = (account: Evaluated) => account.usage?.monthly.percent ?? 100
 
-  const best = input.accounts
+  return input.accounts
     .filter((account) => account.state === "available" && account.credentialID !== input.activeID)
+    .filter((account) => account.headroom >= input.minHeadroom)
+    .filter((account) => input.monthlyUnder === undefined || monthly(account) < input.monthlyUnder)
     .sort((left, right) => {
       const leftRenewal = renewalRank(left)
       const rightRenewal = renewalRank(right)
@@ -88,10 +91,6 @@ export function chooseCandidate(input: {
       if (right.headroom !== left.headroom) return right.headroom - left.headroom
       return orderIndex(input.order, left) - orderIndex(input.order, right)
     })[0]
-
-  if (!best) return undefined
-  if (best.headroom - activeHeadroom < input.hysteresisPoints) return undefined
-  return best
 }
 
 function blocking(window: { status: string; percent: number }): boolean {
